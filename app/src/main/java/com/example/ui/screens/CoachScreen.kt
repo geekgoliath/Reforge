@@ -40,6 +40,7 @@ fun CoachScreen(
 ) {
     val messages by viewModel.coachMessages.collectAsState()
     val isTyping by viewModel.isCoachTyping.collectAsState()
+    val proposedHabit by viewModel.proposedHabit.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var inputText by remember { mutableStateOf("") }
@@ -127,6 +128,90 @@ fun CoachScreen(
                     tint = ColorLung,
                     modifier = Modifier.size(18.dp)
                 )
+            }
+        }
+
+        // Proposed Habit Banner
+        proposedHabit?.let { habit ->
+            Card(
+                colors = CardDefaults.cardColors(containerColor = ReforgeSurface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .border(
+                        width = 1.dp,
+                        color = ReforgeLime,
+                        shape = RoundedCornerShape(16.dp)
+                    )
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(ReforgeLimeMuted),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Psychology,
+                                contentDescription = "AI Inferred Habit",
+                                tint = ReforgeLime,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Text(
+                            text = "AI INFERRED REBOOT STRUGGLE",
+                            color = ReforgeLime,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.0.sp
+                        )
+                    }
+
+                    Text(
+                        text = "I've detected that you might be struggling with '${habit.name}'. Would you like to add it as an active transformation tracker and construct progressive milestones?",
+                        color = ReforgeTextPrimary,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.approveProposedHabit() },
+                            colors = ButtonDefaults.buttonColors(containerColor = ReforgeLime, contentColor = Color.Black),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(36.dp)
+                                .testTag("approve_proposed_habit"),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Confirm Track", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = { viewModel.declineProposedHabit() },
+                            colors = ButtonDefaults.buttonColors(containerColor = ReforgeSurfaceVariant, contentColor = ReforgeTextPrimary),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(36.dp)
+                                .testTag("decline_proposed_habit"),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Dismiss", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
 

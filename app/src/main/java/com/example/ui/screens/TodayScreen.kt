@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.Habit
 import com.example.ui.ReforgeViewModel
 import com.example.ui.theme.*
+import kotlinx.coroutines.delay
 
 @Composable
 fun TodayScreen(
@@ -41,9 +43,17 @@ fun TodayScreen(
     val isAnalyzingDailyCoaching by viewModel.isAnalyzingDailyCoaching.collectAsState()
     val dailyCoachingError by viewModel.dailyCoachingError.collectAsState()
 
+    val transit by viewModel.todayTransitAnalysis.collectAsState()
+    val relapseRiskPercent by viewModel.todayRelapseRiskPercent.collectAsState()
+    val dailySchedule by viewModel.dailySchedule.collectAsState()
+    val scheduledAlarms by viewModel.scheduledAlarms.collectAsState()
+    val isGeneratingSchedule by viewModel.isGeneratingSchedule.collectAsState()
+
     var showAddHabitDialog by remember { mutableStateOf(false) }
     var newHabitName by remember { mutableStateOf("") }
     var isNewHabitBad by remember { mutableStateOf(false) }
+    var showDailyPlanDetails by remember { mutableStateOf(false) }
+    var showMoreToday by remember { mutableStateOf(false) }
 
     var checkInMood by remember { mutableStateOf(3) } // 1: bad, 2: meh, 3: good, 4: great
     var checkInEnergy by remember { mutableStateOf(7) } // 1 to 10
@@ -63,17 +73,27 @@ fun TodayScreen(
 
     // Calculate completion percentage
     val todayDate = viewModel.getTodayString()
+    val checkInToday = checkIns.firstOrNull { it.date == todayDate }
+    val analysisToday = dailyAnalyses.firstOrNull { it.date == todayDate }
     val totalHabits = habits.size
     val completedHabits = habits.count { it.lastCompletedDate == todayDate }
     val completionPercent = if (totalHabits > 0) ((completedHabits.toFloat() / totalHabits) * 100).toInt() else 0
+    val todayScore = analysisToday?.recoveryScore ?: 78
+    val focusItems = remember(analysisToday) {
+        val coachFocus = analysisToday?.todayFocus?.takeIf { it.isNotBlank() }
+        listOf(
+            coachFocus ?: "Avoid evening isolation.",
+            "Eat protein at 6 PM."
+        ).distinct()
+    }
 
     // Get major positive streak status
     val majorStreakText = remember(clocks) {
-        val alcoholClock = clocks.find { it.addictionName == "Alcohol" }
-        if (alcoholClock != null) {
-            val diffMs = System.currentTimeMillis() - alcoholClock.lastResetTimestamp
+        val clock = clocks.firstOrNull()
+        if (clock != null) {
+            val diffMs = System.currentTimeMillis() - clock.lastResetTimestamp
             val days = (diffMs / (1000 * 60 * 60 * 24)).coerceAtLeast(0)
-            "$days Days • Alcohol Free"
+            "$days Days • ${clock.addictionName} Free"
         } else {
             "Reforge Active"
         }
@@ -89,6 +109,7 @@ fun TodayScreen(
     ) {
         // Welcome Header
         item {
+            StaggeredReveal(order = 0) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -98,17 +119,10 @@ fun TodayScreen(
             ) {
                 Column {
                     Text(
-                        text = "Good Morning, ${profile?.name ?: "Vikas"} 👋",
+                        text = "Good Morning, ${profile?.name?.ifBlank { "User" } ?: "User"} 👋",
                         color = ReforgeTextPrimary,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = majorStreakText,
-                        color = ReforgeLime,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
                     )
                 }
                 IconButton(
@@ -126,12 +140,148 @@ fun TodayScreen(
                     )
                 }
             }
+            }
+        }
+
+        item {
+            StaggeredReveal(order = 1) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = ReforgeLime.copy(alpha = 0.18f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = ReforgeSurface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    val alignmentEnergy = transit?.energyForecast?.morning ?: "High"
+                    val alignmentFocus = transit?.suggestedFocus?.takeIf { it.isNotBlank() } ?: "Recovery"
+                    val alignmentRisk = transit?.avoidList?.firstOrNull()?.takeIf { it.isNotBlank() } ?: "Impulsive decisions"
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Today's Score",
+                                color = ReforgeTextMuted,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
+                            )
+                            Text(
+                                text = "$todayScore",
+                                color = ReforgeTextPrimary,
+                                fontSize = 44.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.OfflineBolt,
+                            contentDescription = null,
+                            tint = ReforgeLime,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+
+                    StaggeredReveal(order = 2) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            HorizontalDivider(color = ReforgeSurfaceVariant)
+                            TodaySectionHeader("Today's Focus")
+                            focusItems.forEach { focus ->
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(top = 6.dp)
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(ReforgeLime)
+                                    )
+                                    Text(
+                                        text = focus,
+                                        color = ReforgeTextPrimary,
+                                        fontSize = 15.sp,
+                                        lineHeight = 20.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    StaggeredReveal(order = 3) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            HorizontalDivider(color = ReforgeSurfaceVariant)
+                            TodaySectionHeader("Today's Schedule")
+                            UpcomingScheduleRow(title = "Workout", time = "9:55")
+                            UpcomingScheduleRow(title = "Lunch", time = "11:55")
+                            UpcomingScheduleRow(title = "Snack", time = "2:55")
+                        }
+                    }
+
+                    StaggeredReveal(order = 4) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            HorizontalDivider(color = ReforgeSurfaceVariant)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TodaySectionHeader("Today's Alignment")
+                                TextButton(onClick = { showMoreToday = true }) {
+                                    Text("View Details", color = ReforgeLime, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                }
+                            }
+                            AlignmentMetricRow(label = "Energy", value = alignmentEnergy)
+                            AlignmentMetricRow(label = "Focus", value = alignmentFocus)
+                            AlignmentMetricRow(label = "Risk", value = alignmentRisk)
+                        }
+                    }
+
+                    StaggeredReveal(order = 5) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            HorizontalDivider(color = ReforgeSurfaceVariant)
+                            TodaySectionHeader("Quick Actions")
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                QuickActionPill(
+                                    label = "Check-in",
+                                    icon = Icons.Default.CheckCircle,
+                                    onClick = { showDailyPlanDetails = !showDailyPlanDetails },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                QuickActionPill(
+                                    label = "Coach",
+                                    icon = Icons.Default.ChatBubble,
+                                    onClick = { showMoreToday = true },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            }
         }
 
         // Morning Biometric Check-In / Daily Coach Blueprint
+        if (showDailyPlanDetails) {
         item {
-            val checkInToday = checkIns.find { it.date == todayDate }
-            val analysisToday = dailyAnalyses.find { it.date == todayDate }
+            val checkInToday = checkIns.firstOrNull { it.date == todayDate }
+            val analysisToday = dailyAnalyses.firstOrNull { it.date == todayDate }
 
             if (checkInToday == null) {
                 // Morning Biometric Check-In Card
@@ -343,7 +493,7 @@ fun TodayScreen(
 
                         Button(
                             onClick = {
-                                val wFloat = checkInWeightText.toFloatOrNull() ?: profile?.weight ?: 78.4f
+                                val wFloat = checkInWeightText.toFloatOrNull() ?: profile?.weight ?: 0f
                                 viewModel.saveCheckIn(
                                     mood = checkInMood,
                                     energy = checkInEnergy,
@@ -701,143 +851,507 @@ fun TodayScreen(
                 }
             }
         }
+        }
 
-        // Today's Mission progress card
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(
-                        width = 1.dp,
-                        color = Color(0xFF79747E).copy(alpha = 0.12f),
-                        shape = RoundedCornerShape(20.dp)
-                    ),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = ReforgeSurface)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "TODAY'S MISSION",
-                        color = ReforgeTextMuted,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.0.sp
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Custom Circular Loader
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.size(100.dp)
+        if (showMoreToday) {
+        // Vedic Astrology 2.0 Transit & Focus Card
+        transit?.let { currentTransit ->
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            width = 1.dp,
+                            color = Color(0xFFBB86FC).copy(alpha = 0.3f), // Premium Cosmic Violet border
+                            shape = RoundedCornerShape(20.dp)
+                        ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = ReforgeSurface)
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            CircularProgressIndicator(
-                                progress = { completionPercent.toFloat() / 100f },
-                                modifier = Modifier.size(90.dp),
-                                color = ReforgeLime,
-                                strokeWidth = 8.dp,
-                                trackColor = ReforgeSurfaceVariant
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = Color(0xFFBB86FC),
+                                modifier = Modifier.size(20.dp)
                             )
                             Text(
-                                text = "$completionPercent%",
-                                color = ReforgeTextPrimary,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
+                                text = "🌌 COSMOLOGICAL TRANSITS (VEDIC 2.0)",
+                                color = Color(0xFFBB86FC),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.0.sp
                             )
                         }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        val lagnaStr = profile?.zodiacTheme?.substringBefore(" ") ?: "Ascendant"
+                        val natalSignStr = profile?.zodiacTheme?.substringAfter("Moon:")?.substringBefore(",")?.trim()?.ifBlank { "Natal Sign" } ?: "Natal Sign"
+                        Text(
+                            text = "Lagna: $lagnaStr • Natal Moon: $natalSignStr • Today: Moon in ${currentTransit.transitMoonSign}",
+                            color = ReforgeTextMuted,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
 
-                        // Habits checklist snippet
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // High Risk Window Alert
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.Red.copy(alpha = 0.08f))
+                                .border(1.dp, Color.Red.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                .padding(12.dp)
                         ) {
-                            if (habits.isEmpty()) {
+                            Column {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Warning,
+                                        contentDescription = null,
+                                        tint = Color.Red,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = "Today's Risk Window: ${currentTransit.riskWindow}",
+                                        color = Color.Red,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "No habits. Commit to a task to Reforge your system!",
-                                    color = ReforgeTextMuted,
-                                    fontSize = 13.sp
+                                    text = "Reason: ${currentTransit.reason}",
+                                    color = ReforgeTextPrimary,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
                                 )
-                            } else {
-                                habits.take(4).forEach { habit ->
-                                    val checked = habit.lastCompletedDate == todayDate
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Suggested Focus: ${currentTransit.suggestedFocus}",
+                                    color = ReforgeLime,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Avoid & Recommended Badges
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            // Avoid list
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "AVOID TODAY",
+                                    color = Color.Red,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                currentTransit.avoidList.forEach { avoidItem ->
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .clickable { viewModel.toggleHabit(habit) }
-                                            .padding(vertical = 4.dp, horizontal = 2.dp)
+                                        modifier = Modifier.padding(vertical = 2.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = if (checked) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                                            contentDescription = "Selection State",
-                                            tint = if (checked) ReforgeLime else ReforgeTextMuted,
-                                            modifier = Modifier.size(18.dp)
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(Color.Red)
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = habit.name,
-                                            color = if (checked) ReforgeTextMuted else ReforgeTextPrimary,
-                                            fontSize = 13.sp,
-                                            textDecoration = if (checked) TextDecoration.LineThrough else null,
-                                            fontWeight = if (checked) FontWeight.Normal else FontWeight.Medium
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(text = avoidItem, color = ReforgeTextPrimary, fontSize = 11.sp)
+                                    }
+                                }
+                            }
+
+                            // Recommended list
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "RECOMMENDED",
+                                    color = ReforgeLime,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                currentTransit.recommendedList.forEach { recItem ->
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(vertical = 2.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(ReforgeLime)
                                         )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(text = recItem, color = ReforgeTextPrimary, fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Relapse Risk Score Progress
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Habit Relapse Risk Score", color = ReforgeTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("$relapseRiskPercent%", color = if (relapseRiskPercent > 70) Color.Red else ReforgeLime, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { relapseRiskPercent.toFloat() / 100f },
+                            color = if (relapseRiskPercent > 70) Color.Red else ReforgeLime,
+                            trackColor = ReforgeSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(CircleShape)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Factors: sleep debt • historical patterns • cosmic transit",
+                            color = ReforgeTextMuted,
+                            fontSize = 9.sp,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Energy Forecast Columns
+                        Text(
+                            text = "ASTRO ENERGY FORECAST",
+                            color = ReforgeTextMuted,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val forecastItems = listOf(
+                                Triple("Morning", currentTransit.energyForecast.morning, ColorSleep),
+                                Triple("Afternoon", currentTransit.energyForecast.afternoon, ColorBrain),
+                                Triple("Night", currentTransit.energyForecast.night, ColorLung)
+                            )
+                            forecastItems.forEach { (timeOfDay, level, color) ->
+                                val textColor = when (level.lowercase()) {
+                                    "high" -> ReforgeLime
+                                    "medium" -> Color(0xFFFFA500)
+                                    else -> Color(0xFF888888)
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(ReforgeSurfaceVariant)
+                                        .border(1.dp, color.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                        .padding(8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(text = timeOfDay, color = ReforgeTextMuted, fontSize = 9.sp)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(text = level, color = textColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
                         }
                     }
+                }
+            }
+        }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+        // AI Daily Routine Scheduler Card
+        item {
+            var wakeInput by remember { mutableStateOf("07:00") }
+            var officeInput by remember { mutableStateOf("12:30") }
+            var commuteInput by remember { mutableStateOf("2 hours") }
+            var showTestConfirm by remember { mutableStateOf(false) }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = ReforgeLime.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = ReforgeSurface)
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Schedule,
+                            contentDescription = null,
+                            tint = ReforgeLime,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "AI DAILY RESET SCHEDULER",
+                            color = ReforgeLime,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.0.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Automatically optimize meal timing, workout intervals, and sleep schedules based on constraints.",
+                        color = ReforgeTextMuted,
+                        fontSize = 11.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Input Form Fields
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = wakeInput,
+                            onValueChange = { wakeInput = it },
+                            label = { Text("Wake Time", fontSize = 10.sp) },
+                            placeholder = { Text("07:00") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = ReforgeTextPrimary,
+                                unfocusedTextColor = ReforgeTextPrimary,
+                                focusedBorderColor = ReforgeLime,
+                                unfocusedBorderColor = ReforgeSurfaceVariant
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        OutlinedTextField(
+                            value = officeInput,
+                            onValueChange = { officeInput = it },
+                            label = { Text("Office Start", fontSize = 10.sp) },
+                            placeholder = { Text("12:30") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = ReforgeTextPrimary,
+                                unfocusedTextColor = ReforgeTextPrimary,
+                                focusedBorderColor = ReforgeLime,
+                                unfocusedBorderColor = ReforgeSurfaceVariant
+                            ),
+                            modifier = Modifier.weight(1.1f)
+                        )
+
+                        OutlinedTextField(
+                            value = commuteInput,
+                            onValueChange = { commuteInput = it },
+                            label = { Text("Commute", fontSize = 10.sp) },
+                            placeholder = { Text("2 hours") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = ReforgeTextPrimary,
+                                unfocusedTextColor = ReforgeTextPrimary,
+                                focusedBorderColor = ReforgeLime,
+                                unfocusedBorderColor = ReforgeSurfaceVariant
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
                     Button(
-                        onClick = { showAddHabitDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = ReforgeSurfaceVariant, contentColor = ReforgeLime),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("add_custom_habit"),
+                        onClick = {
+                            viewModel.generateDailySchedule(wakeInput, officeInput, commuteInput)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = ReforgeLime, contentColor = Color.Black),
+                        modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Icon", tint = ReforgeLime, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Add Custom Habit", color = ReforgeLime, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        if (isGeneratingSchedule) {
+                            CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(18.dp))
+                        } else {
+                            Text("Compute & Schedule Local Alarms", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+
+                    // Render Schedule Outputs if generated
+                    dailySchedule?.let { schedule ->
+                        Spacer(modifier = Modifier.height(18.dp))
+                        Text(
+                            text = "TODAY'S PROTOCOL ROUTINE",
+                            color = ReforgeTextMuted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.0.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(ReforgeSurfaceVariant)
+                                .padding(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("🍳 Breakfast (Meal 1)", color = ReforgeTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                Text(schedule.meal1, color = ReforgeLime, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("💪 Muscle/Posture Workout", color = ReforgeTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                Text(schedule.workout, color = ReforgeLime, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("🍱 Lunch/Dinner (Meal 2)", color = ReforgeTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                Text(schedule.meal2, color = ReforgeLime, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("🍎 Craving Defense Snack", color = ReforgeTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                Text(schedule.snack, color = ReforgeLime, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("😴 Bedtime Wind-down", color = ReforgeTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                Text(schedule.sleep, color = ReforgeLime, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Scheduled alarms list
+                        Spacer(modifier = Modifier.height(18.dp))
+                        Text(
+                            text = "SCHEDULED LOCAL ALERTS (OFFLINE)",
+                            color = ReforgeTextMuted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.0.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            scheduledAlarms.forEach { alarm ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.NotificationsActive,
+                                        contentDescription = null,
+                                        tint = when (alarm.type) {
+                                            "Risk" -> Color.Red
+                                            "Preparation" -> Color(0xFFFFA500)
+                                            "Action" -> ReforgeLime
+                                            else -> Color(0xFFBB86FC)
+                                        },
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = alarm.title, color = ReforgeTextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text(text = alarm.description, color = ReforgeTextMuted, fontSize = 10.sp)
+                                    }
+                                    Text(
+                                        text = alarm.timeLabel,
+                                        color = ReforgeLime,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        // Test Notification Trigger
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    viewModel.triggerTestNotification()
+                                    showTestConfirm = true
+                                }
+                            ) {
+                                Icon(Icons.Default.BugReport, contentDescription = null, tint = ReforgeLime, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Test Alerts Immediately", color = ReforgeLime, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                            if (showTestConfirm) {
+                                Text("Alert in 3s...", color = ReforgeLime, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // Recovery Status list
+        // One calm surface with sections instead of a stack of cards.
         item {
-            Text(
-                text = "RECOVERY STATUS",
-                color = ReforgeTextPrimary,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp,
-                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-            )
-        }
-
-        // Recovery modules: Brain, Lung, Sleep, dopamine
-        item {
+            StaggeredReveal(order = 4) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .border(
                         width = 1.dp,
                         color = Color(0xFF79747E).copy(alpha = 0.12f),
-                        shape = RoundedCornerShape(20.dp)
+                        shape = RoundedCornerShape(18.dp)
                     ),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = ReforgeSurface)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
                 ) {
+                    Text(
+                        text = "Today",
+                        color = ReforgeTextPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    TodaySectionHeader("Recovery")
                     RecoveryProgressRow(
                         title = "Brain Recovery",
                         percent = 40,
@@ -845,7 +1359,6 @@ fun TodayScreen(
                         color = ColorBrain,
                         subtitle = "Nicotine receptors ending normalization"
                     )
-                    Divider(color = ReforgeSurfaceVariant, thickness = 1.dp)
                     RecoveryProgressRow(
                         title = "Lung Recovery",
                         percent = 30,
@@ -853,7 +1366,6 @@ fun TodayScreen(
                         color = ColorLung,
                         subtitle = "Carbon monoxide eliminated from bloodstream"
                     )
-                    Divider(color = ReforgeSurfaceVariant, thickness = 1.dp)
                     RecoveryProgressRow(
                         title = "Sleep Recovery",
                         percent = 50,
@@ -861,57 +1373,111 @@ fun TodayScreen(
                         color = ColorSleep,
                         subtitle = "REM sleeping cycles restabilizing"
                     )
-                }
-            }
-        }
 
-        // Focus card
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(
-                        width = 1.dp,
-                        color = Color(0xFF79747E).copy(alpha = 0.12f),
-                        shape = RoundedCornerShape(16.dp)
-                    ),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = ReforgeSurface)
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(ReforgeLimeMuted),
-                        contentAlignment = Alignment.Center
+                    HorizontalDivider(color = ReforgeSurfaceVariant)
+
+                    TodaySectionHeader("Workout")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.TrackChanges,
-                            contentDescription = "Target",
-                            tint = ReforgeLime
-                        )
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "TODAY'S FOCUS",
-                            color = ReforgeLime,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Avoid evening isolation. Take a 15 min walk after work.",
+                            text = dailySchedule?.workout ?: "Take a 15 min walk after work.",
                             color = ReforgeTextPrimary,
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
+                            lineHeight = 18.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "$completionPercent%",
+                            color = ReforgeLime,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
+
+                    HorizontalDivider(color = ReforgeSurfaceVariant)
+
+                    TodaySectionHeader("Nutrition")
+                    Text(
+                        text = dailySchedule?.snack ?: "Eat protein at 6 PM.",
+                        color = ReforgeTextPrimary,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+
+                    HorizontalDivider(color = ReforgeSurfaceVariant)
+
+                    TodaySectionHeader("Habits")
+                    if (habits.isEmpty()) {
+                        Text(
+                            text = "No habits yet.",
+                            color = ReforgeTextMuted,
+                            fontSize = 13.sp
+                        )
+                    } else {
+                        habits.take(4).forEach { habit ->
+                            val checked = habit.lastCompletedDate == todayDate
+                            val rowScale by animateFloatAsState(
+                                targetValue = if (checked) 1.02f else 1f,
+                                label = "habit_completion_scale"
+                            )
+                            val rowGlow by animateColorAsState(
+                                targetValue = if (checked) ReforgeSuccess.copy(alpha = 0.14f) else Color.Transparent,
+                                label = "habit_completion_glow"
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .scale(rowScale)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(rowGlow)
+                                    .clickable { viewModel.toggleHabit(habit) }
+                                    .padding(vertical = 6.dp, horizontal = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (checked) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                    contentDescription = "Selection State",
+                                    tint = if (checked) ReforgeSuccess else ReforgeTextMuted,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = habit.name,
+                                    color = if (checked) ReforgeTextMuted else ReforgeTextPrimary,
+                                    fontSize = 13.sp,
+                                    textDecoration = if (checked) TextDecoration.LineThrough else null,
+                                    fontWeight = if (checked) FontWeight.Normal else FontWeight.Medium
+                                )
+                                AnimatedVisibility(
+                                    visible = checked,
+                                    enter = fadeIn() + slideInHorizontally(initialOffsetX = { it / 2 }),
+                                    exit = fadeOut()
+                                ) {
+                                    Text(
+                                        text = "+XP",
+                                        color = ReforgeSuccess,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    TextButton(
+                        onClick = { showAddHabitDialog = true },
+                        modifier = Modifier.testTag("add_custom_habit")
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add Icon", tint = ReforgeLime, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Add habit", color = ReforgeLime, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    }
                 }
+            }
             }
         }
 
@@ -1111,6 +1677,8 @@ fun TodayScreen(
             }
         }
 
+        }
+
         // Spacer to clear the bottom UI block correctly
         item {
             Spacer(modifier = Modifier.height(24.dp))
@@ -1178,6 +1746,156 @@ fun TodayScreen(
                 }
             },
             containerColor = ReforgeSurface
+        )
+    }
+}
+
+@Composable
+fun TodaySectionHeader(title: String) {
+    Text(
+        text = title,
+        color = ReforgeTextMuted,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.5.sp
+    )
+}
+
+@Composable
+fun UpcomingScheduleRow(title: String, time: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            color = ReforgeTextPrimary,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Text(
+            text = time,
+            color = ReforgeTextMuted,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+fun AlignmentMetricRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            text = label,
+            color = ReforgeTextMuted,
+            fontSize = 13.sp
+        )
+        Text(
+            text = value,
+            color = ReforgeTextPrimary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            lineHeight = 17.sp,
+            modifier = Modifier.weight(1f).padding(start = 16.dp)
+        )
+    }
+}
+
+@Composable
+fun QuickActionPill(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(ReforgeSurfaceVariant)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = ReforgeLime,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = label,
+            color = ReforgeTextPrimary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+fun StaggeredReveal(
+    order: Int,
+    content: @Composable () -> Unit
+) {
+    var visible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(order) {
+        delay(order * 100L)
+        visible = true
+    }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn() + slideInVertically(initialOffsetY = { it / 4 }),
+        exit = fadeOut()
+    ) {
+        content()
+    }
+}
+
+@Composable
+fun DisclosureRow(
+    title: String,
+    subtitle: String,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(ReforgeSurface)
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = ReforgeTextPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                color = ReforgeTextMuted,
+                fontSize = 11.sp,
+                lineHeight = 15.sp
+            )
+        }
+        Icon(
+            imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+            contentDescription = if (expanded) "Collapse" else "Expand",
+            tint = ReforgeLime
         )
     }
 }

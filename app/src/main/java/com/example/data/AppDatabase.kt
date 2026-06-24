@@ -8,21 +8,28 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [
         UserProfile::class,
+        Goal::class,
         Habit::class,
-        HabitLog::class,
+        HabitEvent::class,
+        Milestone::class,
+        MilestoneProgress::class,
+        AiMemory::class,
+        DailyCheckIn::class,
+        CoachInsight::class,
         Workout::class,
         Meal::class,
         WeightHistory::class,
-        RelapseEvent::class,
-        JournalEntry::class,
-        DailyCheckIn::class,
         CoachMessage::class,
         AddictionClock::class,
-        DailyCoachAnalysis::class,
         Exercise::class,
-        ConfidenceChallenge::class
+        ConfidenceChallenge::class,
+        HairLog::class,
+        PhotoAnalysisLog::class,
+        RelapseEvent::class,
+        JournalEntry::class,
+        DailyCoachAnalysis::class
     ],
-    version = 10,
+    version = 12,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -116,7 +116,7 @@ fun ProfileScreen(
                         // Name and Level details
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = profile?.name ?: "Vikas",
+                                text = profile?.name?.ifBlank { "User" } ?: "User",
                                 color = ReforgeTextPrimary,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold
@@ -711,6 +711,65 @@ fun ProfileScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(text = "THERAPEUTIC REBUILD ACTION PLAN:", color = ReforgeLime, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         Text(text = event.preventionPlan, color = ReforgeTextPrimary, fontSize = 12.sp, lineHeight = 16.sp)
+                    }
+                }
+            }
+
+            // TESTING & SYSTEM CONTROLS
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = ReforgeSurface),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                        .border(
+                            width = 1.dp,
+                            color = ColorLung.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(16.dp)
+                        )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "TESTING & SYSTEM CONTROLS",
+                            color = ColorLung,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.0.sp
+                        )
+                        Text(
+                            text = "Reset all local telemetry, biometric profiles, workout protocols, habit schedules, and AI memory states back to a completely clean install state.",
+                            color = ReforgeTextMuted,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                        Button(
+                            onClick = {
+                                viewModel.resetProfile()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = ColorLung, contentColor = Color.White),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp)
+                                .testTag("reset_profile_button"),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteForever,
+                                    contentDescription = "Reset Database",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text("Reset Profile & Onboarding", fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }

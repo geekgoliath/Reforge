@@ -6,10 +6,21 @@ object GeminiManager {
 
     private const val TAG = "GeminiManager"
 
-    suspend fun getCoachResponse(history: List<com.example.data.CoachMessage>, userMessage: String): String {
+    suspend fun getCoachResponse(
+        history: List<com.example.data.CoachMessage>,
+        userMessage: String,
+        userName: String = "User",
+        aiMemoryJson: String = "{}"
+    ): String {
         val apiKey = com.example.BuildConfig.GEMINI_API_KEY
         if (apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()) {
-            return getSimulatedCoachResponse(userMessage)
+            return getSimulatedCoachResponse(userMessage, userName, aiMemoryJson)
+        }
+
+        val memoryContext = if (aiMemoryJson.isNotBlank() && aiMemoryJson != "{}") {
+            "\n\n[CRITICAL CONTEXT: AI MEMORY SYSTEM]\nYou have stored the following memories about this user's preferences, triggers, and goals. You MUST incorporate and respect this history in your recommendations, responses, and tone:\n$aiMemoryJson\n"
+        } else {
+            ""
         }
 
         val coachSystemInstruction = """
@@ -18,6 +29,7 @@ object GeminiManager {
             Your tone is authoritative but deeply compassionate, empathetic, CBT-focused (Cognitive Behavioral Therapy), and rooted in behavioral science (James Clear, BJ Fogg, Andrew Huberman).
             Never lecture or shamed. Focus on 'Identity Change' and 'Environment Design' rather than daily perfection.
             We use Experience Points (XP), not streak shame. Keep messages relatively concise (1-2 paragraphs), structured, using bullet points for action items.
+            Name of the user is $userName.$memoryContext
         """.trimIndent()
 
         // Map database messages to Gemini contents structure with robust role management
@@ -70,7 +82,7 @@ object GeminiManager {
                 ?: "I'm with you on this journey. Let's redirect our focus. Try deep breathing for 2 minutes and taking a glass of water. What's triggering you right now?"
         } catch (e: Exception) {
             Log.e(TAG, "Error generating coach response from cloud, falling back to local simulation", e)
-            getSimulatedCoachResponse(userMessage)
+            getSimulatedCoachResponse(userMessage, userName, aiMemoryJson)
         }
     }
 
@@ -80,11 +92,12 @@ object GeminiManager {
         whereContext: String,
         companion: String,
         emotion: String,
-        timeOfDay: String
+        timeOfDay: String,
+        userName: String = "User"
     ): String {
         val apiKey = com.example.BuildConfig.GEMINI_API_KEY
         if (apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()) {
-            return getSimulatedRelapseResponse(addiction, whatHappened, whereContext, companion, emotion, timeOfDay)
+            return getSimulatedRelapseResponse(addiction, whatHappened, whereContext, companion, emotion, timeOfDay, userName)
         }
 
         val therapistSystemPrompt = """
@@ -132,7 +145,7 @@ object GeminiManager {
                 ?: "Analysis completed. Let's adjust your surroundings: remove cues from your immediate sight, drink water immediately, and step outside for 5 mins."
         } catch (e: Exception) {
             Log.e(TAG, "Error analyzing relapse from cloud, falling back to local simulation", e)
-            getSimulatedRelapseResponse(addiction, whatHappened, whereContext, companion, emotion, timeOfDay)
+            getSimulatedRelapseResponse(addiction, whatHappened, whereContext, companion, emotion, timeOfDay, userName)
         }
     }
 
@@ -223,13 +236,51 @@ object GeminiManager {
 
     // --- PREMIUM LOCAL SIMULATED ENGINE FOR DUAL-MODE COMPLIANCE ---
 
-    private fun getSimulatedCoachResponse(userMessage: String): String {
+    private fun getSimulatedCoachResponse(userMessage: String, userName: String = "User", aiMemoryJson: String = "{}"): String {
         val cleaned = userMessage.trim().lowercase()
         return when {
+            // Memory inspection trigger
+            cleaned.contains("remember") || cleaned.contains("memory") || cleaned.contains("what do you know") -> {
+                val sb = StringBuilder()
+                sb.append("Here is what I currently remember in my AI Memory layer about you, $userName:\n\n")
+                try {
+                    val obj = org.json.JSONObject(aiMemoryJson)
+                    val foods = obj.optJSONArray("preferred_foods")
+                    if (foods != null && foods.length() > 0) {
+                        val foodList = mutableListOf<String>()
+                        for (i in 0 until foods.length()) { foodList.add(foods.getString(i)) }
+                        sb.append("🥑 **Preferred Foods**: ").append(foodList.joinToString(", ")).append("\n")
+                    }
+                    val triggers = obj.optJSONArray("biggest_triggers")
+                    if (triggers != null && triggers.length() > 0) {
+                        val triggerList = mutableListOf<String>()
+                        for (i in 0 until triggers.length()) { triggerList.add(triggers.getString(i)) }
+                        sb.append("⚠️ **Biggest Triggers**: ").append(triggerList.joinToString(", ")).append("\n")
+                    }
+                    if (obj.has("best_workout_time")) {
+                        sb.append("🏋️ **Best Workout Time**: ").append(obj.optString("best_workout_time")).append("\n")
+                    }
+                    if (obj.has("confidence_issue")) {
+                        sb.append("🗣️ **Confidence Challenge**: ").append(obj.optString("confidence_issue")).append("\n")
+                    }
+                    if (obj.has("quit_smoking_goal")) {
+                        sb.append("🚭 **Quit Smoking Goal**: ").append(if (obj.optBoolean("quit_smoking_goal")) "Active" else "Inactive").append("\n")
+                    }
+                    
+                    val lengthCheck = foods?.length() ?: 0 + (triggers?.length() ?: 0)
+                    if (lengthCheck == 0 && !obj.has("best_workout_time") && !obj.has("confidence_issue") && !obj.has("quit_smoking_goal")) {
+                        sb.append("No active memories stored yet. Let me know your preferences, workout timings, or triggers in chat and I'll save them!")
+                    }
+                } catch (e: Exception) {
+                    sb.append("Memory file format is empty or uninitialized. Tell me about your triggers or foods to set it!")
+                }
+                sb.toString()
+            }
+
             // Critical warnings / Tremors / ER / Delirium Tremens
             cleaned.contains("tremor") || cleaned.contains("hallucination") || cleaned.contains("seizure") || 
             cleaned.contains("confusion") || cleaned.contains("er") || cleaned.contains("danger") || cleaned.contains("emergency") -> {
-                "⚠️ **CRITICAL MEDICAL PROTOCOL WARNING**: Vikas, quitting alcohol and smoking cold turkey after 10 years carries significant risk of *Delirium Tremens*. If you are experiencing severe uncontrollable hand tremors, visual/auditory hallucinations, deep confusion, or seizures, **please go to the Emergency Room (ER) immediately**.\n\n" +
+                "⚠️ **CRITICAL MEDICAL PROTOCOL WARNING**: $userName, quitting alcohol and smoking cold turkey after 10 years carries significant risk of *Delirium Tremens*. If you are experiencing severe uncontrollable hand tremors, visual/auditory hallucinations, deep confusion, or seizures, **please go to the Emergency Room (ER) immediately**.\n\n" +
                 "If you feel relatively stable but are dealing with expected cravings, sleeplessness, or high irritability, that is normal dopamine receptor repair. Tell me: exactly what physical symptoms are you experiencing right now?"
             }
             
@@ -237,51 +288,51 @@ object GeminiManager {
             cleaned.contains("supplement") || cleaned.contains("supp") || cleaned.contains("pill") || 
             cleaned.contains("nac") || cleaned.contains("ashwagandha") || cleaned.contains("zma") || 
             cleaned.contains("lion") || cleaned.contains("neurobion") || cleaned.contains("stack") -> {
-                "Vikas, here is your daily **Transformation Supplement Stack** from the Protocol:\n\n" +
+                "$userName, here is your daily **Transformation Supplement Stack** from the Protocol:\n\n" +
                 "☀️ **Morning (08:00 AM)**: Take **NAC (600mg)** (lung health & severe craving blocker) + **Lion's Mane** (brain NGF repair).\n" +
                 "🍳 **Breakfast (10:00 AM)**: Take **Neurobion Forte** (nerve cell regeneration) + **1 Multivitamin**.\n" +
                 "🥗 **Lunch (11:30 AM)**: Take **Fish Oil (1000mg)** (omega-3 brain structure) + **Liv.52** (liver cell support).\n" +
                 "🌙 **Bedtime (11:30 PM)**: Take **ZMA** (Zinc, Magnesium, B6 for deep REM sleep recovery) + **Ashwagandha** (cortisol regulation).\n\n" +
                 "Keep taking them consistently with meals. It provides critical chemical buffers during your first 7 days!"
             }
-
+ 
             // Workout / Gym / Split / Push Pull Legs
             cleaned.contains("workout") || cleaned.contains("gym") || cleaned.contains("exercise") || 
             cleaned.contains("ppl") || cleaned.contains("push") || cleaned.contains("pull") || cleaned.contains("legs") -> {
-                "Vikas, your **Gym Protocol (PPL split)** is designed to raise androgen receptors & anchor dopamine levels:\n\n" +
+                "$userName, your **Gym Protocol (PPL split)** is designed to raise androgen receptors & anchor dopamine levels:\n\n" +
                 "• **Push (Day 1)**: Flat Dumbbell Press, Overhead Press, Incline Flyes, Tricep overhead extensions. Keeps you chest-open and focused.\n" +
                 "• **Pull (Day 2)**: Deadlifts, Weighted pullups/pulldowns, Seated cable rows, Dumbbell Hammer Curls. Builds a strong metabolic back anchor.\n" +
                 "• **Legs (Day 3)**: Barbell squats, Romanian Deadlifts, Walking lunges, Hanging leg raises.\n\n" +
                 "🔥 **Daily Prep (08:20 AM)**: Do **10 Wall Angels** & **20 Band Pull-Aparts** to reverse postural decline and clear breathing airways. Keep sessions under 45 minutes to avoid cortisol spikes!"
             }
-
+ 
             // Diet / Meal Plan / Food / Protein / Eggs
             cleaned.contains("diet") || cleaned.contains("protein") || cleaned.contains("egg") || 
             cleaned.contains("food") || cleaned.contains("lunch") || cleaned.contains("dinner") || 
             cleaned.contains("chicken") || cleaned.contains("whey") || cleaned.contains("soya") -> {
-                "Vikas, your nutrition plan under the Protocol focuses on clean, high-protein fuels to rebuild neurotransmitters:\n\n" +
+                "$userName, your nutrition plan under the Protocol focuses on clean, high-protein fuels to rebuild neurotransmitters:\n\n" +
                 "• **Post-Gym (09:15 AM)**: 1 scoop MuscleBlaze Biozyme Whey Protein.\n" +
                 "• **Breakfast (10:00 AM)**: 3 Whole Eggs + 2 Whites (approx. 24g protein) + Black Coffee (No Sugar).\n" +
                 "• **Lunch (11:30 AM)**: 1 Bowl Dal + 150g Chicken or Soya + 1 Chapati + salad. (Take Fish Oil & Liv.52).\n" +
                 "• **Dinner (08:00 PM)**: 1 Bowl Dal + 2 Boiled Egg Whites + Salad (strictly zero chapatis or heavy carbs at night for insulin balance and weight loss).\n\n" +
                 "Target a daily baseline of **120g - 150g protein**. Avoid processed simple sugars!"
             }
-
+ 
             // Craving / Cigarettes / Alcohol / Tobacco / Drink / Urge
             cleaned.contains("craving") || cleaned.contains("smoke") || cleaned.contains("drink") || 
             cleaned.contains("alcohol") || cleaned.contains("nicotine") || cleaned.contains("beer") || 
             cleaned.contains("whiskey") || cleaned.contains("cig") || cleaned.contains("urge") -> {
-                "Vikas, a craving is just a temporary dopamine drop—it peaks in **90 seconds** and then dissipates. Do not negotiate with your addiction voice. Apply the **Environment Design Checklist**:\n\n" +
+                "$userName, a craving is just a temporary dopamine drop—it peaks in **90 seconds** and then dissipates. Do not negotiate with your addiction voice. Apply the **Environment Design Checklist**:\n\n" +
                 "1. **Box Breathing**: Inhale 4s, hold 4s, exhale 4s, hold 4s. Repeat 5 times to engage the vagal brake.\n" +
                 "2. **Ice Shock**: Splash ice cold water on your face. It triggers the mammalian dive reflex, instantly lowering heart rate and shattering the loop.\n" +
                 "3. **Physical Distance**: Physically leave the triggering room or location immediately.\n\n" +
                 "Remind yourself: *'I am a non-drinker and non-smoker. My identity is forged in strength.'* You are built to prevail."
             }
-
+ 
             // Daily Schedule / Timing / Routine / Master Plan
             cleaned.contains("schedule") || cleaned.contains("routine") || cleaned.contains("daily") || 
             cleaned.contains("plan") || cleaned.contains("timeline") || cleaned.contains("timing") -> {
-                "Vikas, here is your **Master Schedule (Mon-Fri)** summary under the Protocol:\n\n" +
+                "$userName, here is your **Master Schedule (Mon-Fri)** summary under the Protocol:\n\n" +
                 "• **08:00 AM**: Wake up, Warm Water + Jeera/Ajwain + Lemon, take Morning Supplements (NAC & Lion's Mane).\n" +
                 "• **08:20 AM**: 10 Wall Angels & 20 Band Pull-Aparts.\n" +
                 "• **08:30 AM**: Gym (45 mins Weight Training).\n" +
@@ -294,34 +345,34 @@ object GeminiManager {
                 "• **11:30 PM**: Turmeric milk sleep prep + ZMA & Ashwagandha + Scalp Massage.\n\n" +
                 "Discipline beats motivation. Lock in the schedule!"
             }
-
+ 
             // Sleep / Insomnia / Night
             cleaned.contains("sleep") || cleaned.contains("insomnia") || cleaned.contains("night") || cleaned.contains("awake") -> {
-                "Vikas, severe insomnia is expected during the first 7 days of quitting alcohol & nicotine. Your nervous system is in a state of high electrical excitation without those depressants. \n\n" +
+                "$userName, severe insomnia is expected during the first 7 days of quitting alcohol & nicotine. Your nervous system is in a state of high electrical excitation without those depressants. \n\n" +
                 "🌙 **Bedtime Sleep Protocol (11:30 PM)**:\n" +
                 "1. **Warm Turmeric Milk**: Add black pepper, turmeric, and stevia (highly anti-inflammatory, triggers natural melatonin).\n" +
                 "2. **Supplements**: ZMA (Zinc, Magnesium, B6) + Ashwagandha capsule (cortisol dampening).\n" +
                 "3. **Scalp Massage**: Spend 5 minutes massaging your scalp to stimulate parasympathetic pathways.\n\n" +
                 "Turn off all screens 1 hour before bed. If you are awake, do not force it or panic. Read a printed book in dim light. Your neural baseline will normalize."
             }
-
+ 
             // Greetings / Hello / Hi
             cleaned.contains("hi") || cleaned.contains("hello") || cleaned.contains("hey") || cleaned.contains("greetings") -> {
-                "Good morning Vikas! I am your AI Coach. I have loaded your complete **Total Transformation Protocol (35M RESET)**.\n\n" +
+                "Good morning $userName! I am your AI Coach. I have loaded your complete **Total Transformation Protocol (35M RESET)**.\n\n" +
                 "You are quitting alcohol and smoking **cold turkey** after 10 years of use. This is Day 1 of the reset. Your daily master schedule, supplement stack, and workout programs are active in the 'Protocol' tab.\n\n" +
                 "I am fully here to support you. How are you feeling today?"
             }
-
+ 
             // CBT / James Clear / Habits
             cleaned.contains("cbt") || cleaned.contains("habit") || cleaned.contains("james clear") || cleaned.contains("huberman") -> {
-                "Vikas, we leverage **CBT** and **Environment Design** (James Clear, Huberman) over sheer willpower:\n\n" +
+                "$userName, we leverage **CBT** and **Environment Design** (James Clear, Huberman) over sheer willpower:\n\n" +
                 "• **Make it Invisible**: Throw out all lighters, ashtrays, cigarettes, and bottles. Do not let trigger cues drain your cognitive willpower.\n" +
                 "• **Dopamine Restructuring**: Expect irritability—it is your brain rebuilding its receptor pathways. Wear it as a badge of honor. You are earning XP.\n" +
                 "• **Streak Resilience**: We track your efforts as XP, not streak shame. A lapse is not a reset. We analyze, adapt, and build stronger walls."
             }
-
+ 
             else -> {
-                "Vikas, I hear you. We are executing your **Total Transformation Protocol**. Our primary target is maintaining complete abstinence from alcohol and smoking while executing your weight training, protein targets, and supplement stacking.\n\n" +
+                "$userName, I hear you. We are executing your **Total Transformation Protocol**. Our primary target is maintaining complete abstinence from alcohol and smoking while executing your weight training, protein targets, and supplement stacking.\n\n" +
                 "Tell me: what is your current obstacle or mental trigger right now? Let's dissect it using behavioral science and build an environment countermeasure."
             }
         }
@@ -333,7 +384,8 @@ object GeminiManager {
         whereContext: String,
         companion: String,
         emotion: String,
-        timeOfDay: String
+        timeOfDay: String,
+        userName: String
     ): String {
         val detailCbt = when {
             emotion.contains("Stress", ignoreCase = true) -> 
@@ -357,7 +409,7 @@ object GeminiManager {
                 "2. **Implement a friction buffer**: Create a 20-minute mandatory delay before any action. Wash your face with ice cold water to slow heart rate.\n" +
                 "3. **Stack a physical pivot**: Immediately step outside, walk for 5 minutes, and take 500ml of water.\n\n" +
                 "✨ **MINDSET SHIELD**:\n" +
-                "Vikas, a lapse is just a single data point, not a system failure. You have already built powerful non-drinker/non-smoker neural pathways over the past days. That progress is not gone. Re-anchor your identity, learn from this trigger cue, and step forward to collect your XP!"
+                "$userName, a lapse is just a single data point, not a system failure. You have already built powerful recovery neural pathways over the past days. That progress is not gone. Re-anchor your identity, learn from this trigger cue, and step forward to collect your XP!"
     }
 
     private fun getSimulatedJournalResponse(journalText: String): JournalAnalysis {
@@ -770,6 +822,101 @@ object GeminiManager {
             Log.e("GeminiManager", "Error analyzing daily coaching, falling back to simulated", e)
             getSimulatedDailyCoachingResponse(mood, energy, sleep, cravings, weight)
         }
+    }
+
+    suspend fun generateDailySchedule(
+        wakeTime: String,
+        office: String,
+        commute: String,
+        goal: String,
+        riskWindow: String
+    ): String {
+        val apiKey = com.example.BuildConfig.GEMINI_API_KEY
+        if (apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()) {
+            return getSimulatedDailyScheduleResponse(wakeTime, office, commute, goal, riskWindow)
+        }
+
+        val systemPrompt = """
+            You are the 'AI Daily Scheduler' inside Reforge, a Personal Transformation OS.
+            Given the user's daily constraints and goals, generate a highly optimized schedule for today.
+            Input constraints:
+            Wake Time: $wakeTime
+            Office Hours/Time: $office
+            Commute: $commute
+            Transformation Goal: $goal
+            Relapse Risk Window: $riskWindow (Vedic astrology transit risk window)
+
+            Your output must be a single, raw, valid JSON object matching this schema EXACTLY:
+            {
+              "meal1": "HH:MM",
+              "meal2": "HH:MM",
+              "snack": "HH:MM",
+              "workout": "HH:MM",
+              "sleep": "HH:MM"
+            }
+            Use 24-hour time format (HH:MM). Ensure the scheduled events are logically structured:
+            - meal1 should be after wakeTime (usually breakfast).
+            - workout should fit either before office or after office, optimized for the goal (e.g., muscle gain benefits from consistent timing).
+            - meal2 should fit around lunch or dinner.
+            - snack should be scheduled close to or inside the relapse risk window to keep blood sugar stable and prevent cravings (e.g., if riskWindow is 19:00 - 21:00, schedule snack at 18:30 or 19:00).
+            - sleep should be in the evening (usually 22:00 - 23:59).
+
+            Do not wrap the JSON in markdown code blocks. Just return raw JSON only.
+        """.trimIndent()
+
+        val request = GenerateContentRequest(
+            contents = listOf(Content(role = "user", parts = listOf(Part(text = "Generate my daily schedule.")))),
+            systemInstruction = Content(parts = listOf(Part(text = systemPrompt)))
+        )
+
+        return try {
+            val response = RetrofitClient.service.generateContent(apiKey, request)
+            val result = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
+            if (result.isBlank()) {
+                getSimulatedDailyScheduleResponse(wakeTime, office, commute, goal, riskWindow)
+            } else {
+                result
+            }
+        } catch (e: Exception) {
+            Log.e("GeminiManager", "Error generating daily schedule, falling back to simulated", e)
+            getSimulatedDailyScheduleResponse(wakeTime, office, commute, goal, riskWindow)
+        }
+    }
+
+    private fun getSimulatedDailyScheduleResponse(
+        wakeTime: String,
+        office: String,
+        commute: String,
+        goal: String,
+        riskWindow: String
+    ): String {
+        val wakeParts = wakeTime.split(":")
+        val wakeHour = wakeParts.getOrNull(0)?.toIntOrNull() ?: 7
+        val wakeMin = wakeParts.getOrNull(1)?.toIntOrNull() ?: 0
+
+        val meal1Time = String.format(java.util.Locale.US, "%02d:%02d", (wakeHour + 1) % 24, wakeMin)
+        val workoutTime = String.format(java.util.Locale.US, "%02d:%02d", (wakeHour + 3) % 24, wakeMin)
+        val meal2Time = String.format(java.util.Locale.US, "%02d:%02d", (wakeHour + 6) % 24, wakeMin)
+
+        val riskStartHour = if (riskWindow.contains("-")) {
+            val startPart = riskWindow.split("-")[0].trim()
+            startPart.split(":")[0].toIntOrNull() ?: 19
+        } else {
+            19
+        }
+        
+        val snackTime = String.format(java.util.Locale.US, "%02d:30", (riskStartHour - 1 + 24) % 24)
+        val sleepTime = "23:00"
+
+        return """
+            {
+              "meal1": "$meal1Time",
+              "meal2": "$meal2Time",
+              "snack": "$snackTime",
+              "workout": "$workoutTime",
+              "sleep": "$sleepTime"
+            }
+        """.trimIndent()
     }
 
     suspend fun generateNutritionMeals(
@@ -1313,41 +1460,6 @@ object GeminiManager {
             recPostureCorrection = "Complete 3 sets of 12 Wall Angels daily. This directly targets the thoracic spine, combats forward head rounding, lowers background neck tension, and aligns breathing capacity."
         )
     }
-}
-
-data class CognitiveEvaluation(
-    val vocabularyScore: Int,
-    val coherenceScore: Int,
-    val focusScore: Int,
-    val feedback: String
-)
-
-data class JournalAnalysis(
-    val summary: String,
-    val mood: String,
-    val triggers: String,
-    val wins: String = "",
-    val mistakes: String = "",
-    val tomorrowFocus: String = ""
-)
-
-data class TransformationReport(
-    val weeklyWeightAnalysis: String,
-    val weeklyTrendsAnalysis: String,
-    val monthlyBiggestTrigger: String,
-    val monthlyBestHabit: String,
-    val monthlyWorstHabit: String,
-    val monthlyRecoveryPrediction: String,
-    val monthlyNextMonthPlan: String,
-    val recHydration: String,
-    val recSleep: String,
-    val recCalorieAdjust: String,
-    val recDeloadWeek: String,
-    val recRelapsePrevention: String,
-    val recBreathingExercises: String,
-    val recWalkingGoals: String,
-    val recPostureCorrection: String
-)
 
 suspend fun analyzeAdaptiveEngine(
     goal: String,
@@ -1402,3 +1514,464 @@ suspend fun analyzeAdaptiveEngine(
         }
     }
 }
+
+    // --- AI MEMORY HELPER ---
+    private fun formatMemoryPrompt(aiMemoryJson: String): String {
+        if (aiMemoryJson.isBlank() || aiMemoryJson == "{}") return ""
+        return """
+            
+            [CRITICAL CONTEXT: AI MEMORY SYSTEM]
+            The following is the summarized memories, preferences, and triggers currently stored about this user. You MUST incorporate and respect this history in your recommendations:
+            $aiMemoryJson
+            
+        """.trimIndent()
+    }
+
+    // --- CONVERSATIONAL HABIT DISCOVERY (Phase 19) ---
+    suspend fun discoverHabitsFromText(statement: String): String {
+        val apiKey = com.example.BuildConfig.GEMINI_API_KEY
+        if (apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()) {
+            // Simulated extraction
+            val badHabits = mutableListOf<String>()
+            val cleaned = statement.lowercase()
+            if (cleaned.contains("smoke") || cleaned.contains("cig") || cleaned.contains("vape")) badHabits.add("Smoking")
+            if (cleaned.contains("drink") || cleaned.contains("alcohol") || cleaned.contains("beer")) badHabits.add("Alcohol")
+            if (cleaned.contains("late") || cleaned.contains("scroll") || cleaned.contains("phone")) badHabits.add("Late Night Scrolling")
+            if (cleaned.contains("skip") || cleaned.contains("meal") || cleaned.contains("eat")) badHabits.add("Meal Skipping")
+            if (cleaned.contains("procrastinate") || cleaned.contains("lazy") || cleaned.contains("work")) badHabits.add("Procrastination")
+            if (cleaned.contains("anxious") || cleaned.contains("people") || cleaned.contains("speak")) badHabits.add("Social Anxiety")
+            if (cleaned.contains("sugar") || cleaned.contains("junk") || cleaned.contains("sweet")) badHabits.add("Junk Food")
+
+            val jsonArray = badHabits.joinToString { "\"$it\"" }
+            return "{\"bad_habits\": [$jsonArray]}"
+        }
+
+        val prompt = """
+            You are 'HabitExtractor' inside Reforge.
+            Analyze this conversational user statement about their lifestyle and extract bad habits or addictions they want to conquer.
+            User Statement: "$statement"
+
+            Return a single raw JSON object matching this schema exactly:
+            {
+              "bad_habits": ["Habit Name 1", "Habit Name 2"]
+            }
+            Do not include markdown blocks or extra text. Just raw JSON.
+        """.trimIndent()
+
+        val request = GenerateContentRequest(
+            contents = listOf(Content(role = "user", parts = listOf(Part(text = statement)))),
+            systemInstruction = Content(parts = listOf(Part(text = prompt)))
+        )
+
+        return try {
+            val response = RetrofitClient.service.generateContent(apiKey, request)
+            response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: "{\"bad_habits\":[]}"
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in discoverHabitsFromText", e)
+            "{\"bad_habits\":[]}"
+        }
+    }
+
+    // --- DYNAMIC MILESTONE BUILDER (Phase 19) ---
+    suspend fun generateMilestonesForHabit(habitName: String, category: String, severity: String): String {
+        val apiKey = com.example.BuildConfig.GEMINI_API_KEY
+        if (apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()) {
+            // Simulated dynamic milestones
+            val cleanPeriod = when(severity.lowercase()) {
+                "severe" -> 30
+                "moderate" -> 14
+                else -> 7
+            }
+            return """
+            {
+              "milestones": [
+                { "title": "Milestone 1: Commencing Sovereign Abstinence", "description": "Abstain from $habitName or stay consistent for 3 days", "targetDays": 3 },
+                { "title": "Milestone 2: Cellular Alignment Active", "description": "Successfully manage cravings and maintain focus for 7 days", "targetDays": 7 },
+                { "title": "Milestone 3: Neural Architecture Rewired", "description": "Complete $cleanPeriod days of clean consistency", "targetDays": $cleanPeriod },
+                { "title": "Milestone 4: Full Habit Sovereign Shield", "description": "Master behavioral environment and achieve 90% adherence", "targetDays": 90 }
+              ]
+            }
+            """.trimIndent()
+        }
+
+        val prompt = """
+            You are 'MilestoneBuilder' in Reforge.
+            Build exactly 4 progressive milestones for this user habit/struggle:
+            Habit: $habitName
+            Category: $category
+            Severity: $severity
+
+            Your output must be a single raw valid JSON object matching this schema exactly:
+            {
+              "milestones": [
+                { "title": "Short title", "description": "Empathetic action detail", "targetDays": 3 }
+              ]
+            }
+            Ensure the targetDays field progressively increases (e.g. 3, 7, 14, 30).
+            Do not include markdown or extra text. Just raw JSON.
+        """.trimIndent()
+
+        val request = GenerateContentRequest(
+            contents = listOf(Content(role = "user", parts = listOf(Part(text = "Build milestones for $habitName")))),
+            systemInstruction = Content(parts = listOf(Part(text = prompt)))
+        )
+
+        return try {
+            val response = RetrofitClient.service.generateContent(apiKey, request)
+            response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in generateMilestonesForHabit", e)
+            ""
+        }
+    }
+
+    // --- HOROSCOPE INTERPRETER (Phase 13) ---
+    suspend fun interpretHoroscope(horoscopeJson: String, goals: String): String {
+        val apiKey = com.example.BuildConfig.GEMINI_API_KEY
+        if (apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()) {
+            return "Planetary alignments indicate Saturn aligns with your transformation goals ($goals). This phase supports building structural discipline. Avoid impulsive actions during sunset hours."
+        }
+
+        val prompt = """
+            You are 'HoroscopeInterpreter' inside Reforge.
+            Interpret this locally-calculated Vedic horoscope JSON.
+            Horoscope JSON:
+            $horoscopeJson
+
+            Transformation Goals: $goals
+
+            Rules:
+            - Interpret this horoscope.
+            - Never give medical advice.
+            - Never alter calorie or meal plans based on astrology.
+            - Use astrology ONLY for: Reflection, Motivation, Risk Awareness, Behavior Patterns.
+            - Keep response under 150 words.
+        """.trimIndent()
+
+        val request = GenerateContentRequest(
+            contents = listOf(Content(role = "user", parts = listOf(Part(text = "Interpret this horoscope.")))),
+            systemInstruction = Content(parts = listOf(Part(text = prompt)))
+        )
+
+        return try {
+            val response = RetrofitClient.service.generateContent(apiKey, request)
+            response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: "Astrological alignments suggest patience and steady physical recovery."
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in interpretHoroscope", e)
+            "Astrological alignments suggest patience and steady physical recovery."
+        }
+    }
+
+    // --- HAIR LOSS CAUSES EVALUATOR (Phase 12) ---
+    suspend fun analyzeHairFall(weight: Float, protein: Float, sleep: Float, alcohol: Boolean, stress: Int): String {
+        val apiKey = com.example.BuildConfig.GEMINI_API_KEY
+        if (apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()) {
+            val causes = mutableListOf<String>()
+            if (sleep < 6f) causes.add("Sleep deficit")
+            if (alcohol) causes.add("Alcohol intake")
+            if (protein < 90f) causes.add("Low protein")
+            if (stress > 6) causes.add("High stress")
+            if (causes.isEmpty()) causes.add("Minor hormonal fluctuations")
+            return "Most likely causes:\n\n" + causes.joinToString("\n") { "• $it" }
+        }
+
+        val prompt = """
+            You are 'HairAnalyst' inside Reforge.
+            Analyze these user biometrics to determine the most likely physiological causes of hair fall:
+            - Weight: $weight kg
+            - Daily Protein: $protein g
+            - Sleep Hours: $sleep hours
+            - Alcohol consumption: $alcohol
+            - Stress level: $stress/10
+
+            Rules:
+            - Output ONLY the most likely lifestyle causes (e.g. Sleep deficit, Alcohol, Low protein, Stress).
+            - Do NOT suggest treatments or remedies (such as 'Use rosemary oil', minoxidil, or specific oils).
+            - Keep it clean, direct, and under 50 words.
+        """.trimIndent()
+
+        val request = GenerateContentRequest(
+            contents = listOf(Content(role = "user", parts = listOf(Part(text = "Analyze my biometrics for hair fall")))),
+            systemInstruction = Content(parts = listOf(Part(text = prompt)))
+        )
+
+        return try {
+            val response = RetrofitClient.service.generateContent(apiKey, request)
+            response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: "Most likely causes: Low protein and sleep deficit."
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in analyzeHairFall", e)
+            "Most likely causes: Low protein and sleep deficit."
+        }
+    }
+
+    // --- DYNAMIC PLAN REGENERATOR (Phase 15) ---
+    suspend fun regenerateDailyPlan(
+        biometricChangedFlag: String,
+        currentBiometrics: String,
+        knownMemory: String
+    ): String {
+        val apiKey = com.example.BuildConfig.GEMINI_API_KEY
+        if (apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()) {
+            return """
+            {
+              "workoutIntensityAdjustment": -20.0,
+              "workoutFocusAdjustment": "Reduce workout intensity by 20% and increase recovery walking.",
+              "carbAdjustmentPercent": 15.0,
+              "calorieAdjustment": 150.0,
+              "aiExplanation": "Due to low energy and sleep quality (poor recovery detected), we have automatically reduced your workout intensity by 20% to avoid CNS exhaustion, while scaling up clean carbs by 15% to support glycogen restore."
+            }
+            """.trimIndent()
+        }
+
+        val prompt = """
+            You are 'PlanRegenerator', the physiological recalibration brain of Reforge.
+            The daily biometric check-ins show changes: $biometricChangedFlag.
+            
+            Current Biometrics:
+            $currentBiometrics
+            
+            Known AI Memory Context:
+            $knownMemory
+
+            Adjust tomorrow's meals and workouts.
+            Return a single raw JSON object matching this schema exactly:
+            {
+              "workoutIntensityAdjustment": -20.0, // Float percent change (e.g. -20% or 0%)
+              "workoutFocusAdjustment": "Add recovery walking, reduce intensity", // String explanation of workout changes
+              "carbAdjustmentPercent": 15.0, // Float percent change in carb amounts (e.g. 15% or -10%)
+              "calorieAdjustment": 250.0, // Float adjustment in total calories (e.g. +250 or -250 or 0)
+              "aiExplanation": "Brief clinical explanation of the adjustments (max 3 sentences)."
+            }
+            Do not include markdown or extra text. Just raw JSON.
+        """.trimIndent()
+
+        val request = GenerateContentRequest(
+            contents = listOf(Content(role = "user", parts = listOf(Part(text = "Regenerate my plan")))),
+            systemInstruction = Content(parts = listOf(Part(text = prompt)))
+        )
+
+        return try {
+            val response = RetrofitClient.service.generateContent(apiKey, request)
+            response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in regenerateDailyPlan", e)
+            ""
+        }
+    }
+
+    // --- PHOTO POSTURE ANALYZER (Phase 16) ---
+    suspend fun analyzePosturePhotos(frontBase64: String, sideBase64: String, backBase64: String): String {
+        val apiKey = com.example.BuildConfig.GEMINI_API_KEY
+        if (apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()) {
+            return """
+            {
+              "forwardHead": "Mild forward head carriage (approx 3-5 degrees) noted from the side profile analysis.",
+              "roundedShoulders": "Moderate internal rotation of the humerus, leading to rounded shoulder caps.",
+              "pelvicTilt": "Slight anterior pelvic tilt, commonly associated with prolonged sitting.",
+              "bodyFatEstimate": 19.5,
+              "postureCorrectionPlan": "### Spinal Alignment Protocol\n1. **Wall Angels**: 3 sets of 12 reps daily to target thoracic extension.\n2. **Chin Tucks**: 3 sets of 10 holds (5s each) to reinforce deep cervical flexor strength.\n3. **Glute Bridges**: 3 sets of 15 reps to reverse anterior pelvic tilt tilt."
+            }
+            """.trimIndent()
+        }
+
+        val systemPrompt = """
+            You are 'PostureVisionIntelligence' inside Reforge.
+            Analyze the user's uploaded Front, Side, and Back posture photos.
+            Identify:
+            1. Forward Head posture
+            2. Rounded Shoulders
+            3. Pelvic Tilt
+            4. Body fat estimate
+            
+            Return a single raw JSON object matching this schema exactly:
+            {
+              "forwardHead": "Detailed analysis of forward head posture",
+              "roundedShoulders": "Detailed analysis of rounded shoulders",
+              "pelvicTilt": "Detailed analysis of pelvic tilt",
+              "bodyFatEstimate": 18.5,
+              "postureCorrectionPlan": "Posture Correction Plan containing specific exercises and stretches (markdown format)"
+            }
+            Do not include markdown blocks or extra text. Just raw JSON.
+        """.trimIndent()
+
+        // Construct multimodal content parts
+        val parts = mutableListOf<Part>()
+        if (frontBase64.isNotBlank()) parts.add(Part(inlineData = InlineData("image/jpeg", frontBase64)))
+        if (sideBase64.isNotBlank()) parts.add(Part(inlineData = InlineData("image/jpeg", sideBase64)))
+        if (backBase64.isNotBlank()) parts.add(Part(inlineData = InlineData("image/jpeg", backBase64)))
+        parts.add(Part(text = "Please analyze my Front, Side, and Back posture photos and body fat."))
+
+        val request = GenerateContentRequest(
+            contents = listOf(Content(role = "user", parts = parts)),
+            systemInstruction = Content(parts = listOf(Part(text = systemPrompt)))
+        )
+
+        return try {
+            val response = RetrofitClient.service.generateContent(apiKey, request)
+            val jsonText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
+            jsonText.trim()
+                .removePrefix("```json")
+                .removePrefix("```")
+                .removeSuffix("```")
+                .trim()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in analyzePosturePhotos", e)
+            """
+            {
+              "forwardHead": "Mild forward head carriage (approx 3-5 degrees) noted from the side profile analysis.",
+              "roundedShoulders": "Moderate internal rotation of the humerus, leading to rounded shoulder caps.",
+              "pelvicTilt": "Slight anterior pelvic tilt, commonly associated with prolonged sitting.",
+              "bodyFatEstimate": 19.5,
+              "postureCorrectionPlan": "### Spinal Alignment Protocol\n1. **Wall Angels**: 3 sets of 12 reps daily to target thoracic extension.\n2. **Chin Tucks**: 3 sets of 10 holds (5s each) to reinforce deep cervical flexor strength.\n3. **Glute Bridges**: 3 sets of 15 reps to reverse anterior pelvic tilt tilt."
+            }
+            """.trimIndent()
+        }
+    }
+
+    // --- CONVERSATIONAL AI MEMORY EXTRACTOR (Phase 14) ---
+    suspend fun extractMemories(userMsg: String, botResp: String, currentMemoriesJson: String): String {
+        val apiKey = com.example.BuildConfig.GEMINI_API_KEY
+        if (apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()) {
+            // Simulated local memory extraction
+            try {
+                val obj = org.json.JSONObject(currentMemoriesJson)
+                val prefFoods = obj.optJSONArray("preferred_foods") ?: org.json.JSONArray()
+                val triggers = obj.optJSONArray("biggest_triggers") ?: org.json.JSONArray()
+                
+                val cleanedMsg = userMsg.lowercase()
+                
+                // Add preferred foods dynamically
+                val commonFoods = listOf("dal", "rice", "roti", "eggs", "chicken", "banana", "paneer", "fish", "curd", "oats", "milk", "peanuts", "almonds")
+                for (food in commonFoods) {
+                    if (cleanedMsg.contains(food)) {
+                        var has = false
+                        val capitalFood = food.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
+                        for (i in 0 until prefFoods.length()) { if (prefFoods.getString(i) == capitalFood) has = true }
+                        if (!has) prefFoods.put(capitalFood)
+                    }
+                }
+                
+                // Add triggers dynamically
+                val commonTriggers = listOf("boredom", "stress", "evening", "afternoon", "friends", "work", "night", "isolation", "fatigue")
+                for (trigger in commonTriggers) {
+                    if (cleanedMsg.contains(trigger)) {
+                        var has = false
+                        val desc = when(trigger) {
+                            "boredom" -> "Boredom or idle time"
+                            "stress" -> "Stress and pressure"
+                            "evening" -> "Evening transition period"
+                            "afternoon" -> "Afternoon energy slump"
+                            "friends" -> "Social pressure with peers"
+                            "work" -> "Workplace stress"
+                            "night" -> "Late night accessibility"
+                            "isolation" -> "Feeling lonely or isolated"
+                            "fatigue" -> "Physical fatigue or low sleep"
+                            else -> trigger
+                        }
+                        for (i in 0 until triggers.length()) { if (triggers.getString(i) == desc) has = true }
+                        if (!has) triggers.put(desc)
+                    }
+                }
+
+                // Best workout time
+                if (cleanedMsg.contains("workout") || cleanedMsg.contains("gym")) {
+                    if (cleanedMsg.contains("morning") || cleanedMsg.contains("early")) {
+                        obj.put("best_workout_time", "morning")
+                    } else if (cleanedMsg.contains("evening") || cleanedMsg.contains("night") || cleanedMsg.contains("afternoon")) {
+                        obj.put("best_workout_time", "evening")
+                    }
+                }
+
+                // Confidence issue
+                if (cleanedMsg.contains("confidence") || cleanedMsg.contains("nervous") || cleanedMsg.contains("anxious") || cleanedMsg.contains("fear")) {
+                    if (cleanedMsg.contains("public") || cleanedMsg.contains("speaking") || cleanedMsg.contains("talk") || cleanedMsg.contains("group")) {
+                        obj.put("confidence_issue", "public speaking")
+                    } else if (cleanedMsg.contains("stranger") || cleanedMsg.contains("social") || cleanedMsg.contains("people")) {
+                        obj.put("confidence_issue", "social anxiety")
+                    }
+                }
+
+                // Quit smoking goal
+                if (cleanedMsg.contains("quit smoking") || cleanedMsg.contains("stop smoking") || cleanedMsg.contains("quit cig") || cleanedMsg.contains("no smoking")) {
+                    obj.put("quit_smoking_goal", true)
+                }
+                
+                obj.put("preferred_foods", prefFoods)
+                obj.put("biggest_triggers", triggers)
+                return obj.toString()
+            } catch (e: Exception) {
+                return currentMemoriesJson
+            }
+        }
+
+        val prompt = """
+            You are 'MemoryExtractor' inside Reforge.
+            Extract new personal details, preferences, triggers, workout timings, or confidence concerns from the recent conversation turn and merge them into the current memory JSON.
+            
+            Current Memory JSON:
+            $currentMemoriesJson
+
+            User Message: "$userMsg"
+            Coach Response: "$botResp"
+
+            Return a single raw JSON object matching this schema exactly:
+            {
+              "preferred_foods": ["food1", "food2"],
+              "biggest_triggers": ["trigger1", "trigger2"],
+              "best_workout_time": "morning/evening/etc",
+              "confidence_issue": "public speaking/etc",
+              "quit_smoking_goal": true/false
+            }
+            Maintain all existing memories while merging new insights.
+            Do not include markdown or extra text. Just raw JSON.
+        """.trimIndent()
+
+        val request = GenerateContentRequest(
+            contents = listOf(Content(role = "user", parts = listOf(Part(text = "Extract memories.")))),
+            systemInstruction = Content(parts = listOf(Part(text = prompt)))
+        )
+
+        return try {
+            val response = RetrofitClient.service.generateContent(apiKey, request)
+            response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: currentMemoriesJson
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in extractMemories", e)
+            currentMemoriesJson
+        }
+    }
+}
+
+data class CognitiveEvaluation(
+    val vocabularyScore: Int,
+    val coherenceScore: Int,
+    val focusScore: Int,
+    val feedback: String
+)
+
+data class JournalAnalysis(
+    val summary: String,
+    val mood: String,
+    val triggers: String,
+    val wins: String = "",
+    val mistakes: String = "",
+    val tomorrowFocus: String = ""
+)
+
+data class TransformationReport(
+    val weeklyWeightAnalysis: String,
+    val weeklyTrendsAnalysis: String,
+    val monthlyBiggestTrigger: String,
+    val monthlyBestHabit: String,
+    val monthlyWorstHabit: String,
+    val monthlyRecoveryPrediction: String,
+    val monthlyNextMonthPlan: String,
+    val recHydration: String,
+    val recSleep: String,
+    val recCalorieAdjust: String,
+    val recDeloadWeek: String,
+    val recRelapsePrevention: String,
+    val recBreathingExercises: String,
+    val recWalkingGoals: String,
+    val recPostureCorrection: String
+)
+

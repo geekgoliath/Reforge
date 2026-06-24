@@ -4,6 +4,8 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.AddictionClock
+import com.example.data.AiMemory
 import com.example.ui.ReforgeViewModel
 import com.example.api.TransformationReport
 import com.example.ui.theme.*
@@ -38,8 +41,13 @@ fun JourneyScreen(
     val profile by viewModel.userProfile.collectAsState()
     val isEvaluatingJournal by viewModel.isEvaluatingCognitiveJournal.collectAsState()
     val journalEvalResult by viewModel.cognitiveEvaluationResult.collectAsState()
+    val aiMemoryState by viewModel.aiMemory.collectAsState()
+    val habits by viewModel.habits.collectAsState()
+    val milestones by viewModel.milestones.collectAsState()
+    val milestoneProgressList by viewModel.milestoneProgress.collectAsState()
 
     var activeSubTab by remember { mutableStateOf("Timelines") } // "Timelines" vs "Confidence"
+    var showJourneyTools by remember { mutableStateOf(false) }
     var selectedChallengeForReflection by remember { mutableStateOf<com.example.data.ConfidenceChallenge?>(null) }
     var reflectionInputNotes by remember { mutableStateOf("") }
     var selectedDifficultyFilter by remember { mutableStateOf("All") } // "All", "Beginner", "Intermediate", "Advanced"
@@ -56,7 +64,15 @@ fun JourneyScreen(
     var customCompanion by remember { mutableStateOf("") }
     var customEmotion by remember { mutableStateOf("") }
 
-    var timelineSelectedAddiction by remember { mutableStateOf("Smoking") }
+    var timelineSelectedAddiction by remember { mutableStateOf("") }
+
+    val badHabits = habits.filter { it.isBadHabit }
+
+    LaunchedEffect(badHabits) {
+        if (badHabits.isNotEmpty() && (timelineSelectedAddiction.isEmpty() || badHabits.none { it.name.lowercase() == timelineSelectedAddiction.lowercase() })) {
+            timelineSelectedAddiction = badHabits.first().name
+        }
+    }
 
     var isSubmittingRelapse by remember { mutableStateOf(false) }
 
@@ -140,6 +156,7 @@ fun JourneyScreen(
                             "Timelines" -> "Your Journey"
                             "Confidence" -> "Confidence Builder"
                             "Cognitive" -> "Cognitive Gym"
+                            "Memory" -> "AI Memory Layer"
                             else -> "Transformation Intelligence"
                         },
                         color = ReforgeTextPrimary,
@@ -149,9 +166,10 @@ fun JourneyScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = when (activeSubTab) {
-                            "Timelines" -> "Dopamine receptors timeline & reset logs"
+                            "Timelines" -> "A life story, one marker at a time"
                             "Confidence" -> "Progressive social exposure challenges"
                             "Cognitive" -> "Phase 8: Memory & Speech Recovery"
+                            "Memory" -> "Persistent AI context & personal preferences"
                             else -> "Algorithmic biometrics & AI-powered intelligence"
                         },
                         color = ReforgeTextMuted,
@@ -159,25 +177,10 @@ fun JourneyScreen(
                     )
                 }
 
-                if (activeSubTab == "Timelines") {
-                    IconButton(
-                        onClick = { showRelapseDialog = true },
-                        modifier = Modifier
-                            .testTag("journey_relapse_trigger")
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(ColorLung.copy(alpha = 0.2f))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.SentimentVeryDissatisfied,
-                            contentDescription = "Report Relapse",
-                            tint = ColorLung
-                        )
-                    }
-                }
             }
         }
 
+        if (activeSubTab != "Timelines" || showJourneyTools) {
         // Active Sub Tab Picker
         item {
             Row(
@@ -192,6 +195,7 @@ fun JourneyScreen(
                     "Timelines" to Icons.Default.TrendingUp,
                     "Confidence" to Icons.Default.Psychology,
                     "Cognitive" to Icons.Default.MenuBook,
+                    "Memory" to Icons.Default.Memory,
                     "Intelligence" to Icons.Default.AutoAwesome
                 ).forEach { (tabName, icon) ->
                     val active = activeSubTab == tabName
@@ -215,9 +219,10 @@ fun JourneyScreen(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = when (tabName) {
-                                "Timelines" -> "Clocks"
+                                "Timelines" -> "Timeline"
                                 "Confidence" -> "Confidence"
                                 "Cognitive" -> "Cognitive Gym"
+                                "Memory" -> "Memory"
                                 else -> "Intelligence"
                             },
                             color = if (active) ReforgeTextPrimary else ReforgeTextMuted,
@@ -228,238 +233,45 @@ fun JourneyScreen(
                 }
             }
         }
+        }
 
         if (activeSubTab == "Timelines") {
-            // Clock Tickers grid
             item {
-                Text(
-                    text = "ACTIVE TIMELINE TICKERS",
-                    color = ReforgeTextMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.0.sp,
-                    modifier = Modifier.padding(top = 8.dp)
+                val completedWorkoutCount = workouts.count { it.isCompleted }
+                val smokingDays = clocks.firstOrNull { it.addictionName.equals("Smoking", ignoreCase = true) }?.let { clock ->
+                    ((System.currentTimeMillis() - clock.lastResetTimestamp) / (1000 * 60 * 60 * 24)).coerceAtLeast(0)
+                } ?: 0L
+                val storyEvents = listOf(
+                    JourneyStoryEvent(day = 1, title = "Started Recovery", body = "You chose a quieter direction and began again."),
+                    JourneyStoryEvent(day = 4, title = "Completed ${completedWorkoutCount.coerceAtLeast(3)} workouts", body = "Movement became part of the recovery rhythm."),
+                    JourneyStoryEvent(day = 7, title = "Energy improving", body = "The first week settled. Your body started giving a little back."),
+                    JourneyStoryEvent(day = 11, title = if (smokingDays >= 11) "No smoking" else "No smoking path", body = "The old cue lost some of its pull. Keep protecting the evening window.")
                 )
+
+                JourneyStoryTimeline(events = storyEvents)
             }
 
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (clocks.isEmpty()) {
-                        Text("No active timers. Set your addictions in Onboarding.", color = ReforgeTextMuted)
-                    } else {
-                        clocks.forEach { clock ->
-                            val diffMs = System.currentTimeMillis() - clock.lastResetTimestamp
-                            val days = (diffMs / (1000 * 60 * 60 * 24)).coerceAtLeast(0)
-                            val color = when (clock.addictionName) {
-                                "Alcohol" -> ColorBrain
-                                "Smoking" -> ColorLung
-                                "Porn" -> ColorPorn
-                                "Gambling" -> ColorGambling
-                                else -> ReforgeLime
-                            }
-
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = ReforgeSurface),
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.border(
-                                    width = 1.dp,
-                                    color = Color(0xFF79747E).copy(alpha = 0.12f),
-                                    shape = RoundedCornerShape(16.dp)
-                                )
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(40.dp)
-                                                .clip(CircleShape)
-                                                .background(color.copy(alpha = 0.15f)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = when (clock.addictionName) {
-                                                    "Alcohol" -> Icons.Default.LocalBar
-                                                    "Smoking" -> Icons.Default.SmokingRooms
-                                                    "Porn" -> Icons.Default.NoAdultContent
-                                                    "Gambling" -> Icons.Default.Casino
-                                                    else -> Icons.Default.AccessTime
-                                                },
-                                                contentDescription = clock.addictionName,
-                                                tint = color,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-                                        Column {
-                                            Text(text = clock.addictionName, color = ReforgeTextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                            Text(text = "Targeting Identity Change", color = ReforgeTextMuted, fontSize = 11.sp)
-                                        }
-                                    }
-
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(
-                                            text = "$days",
-                                            color = color,
-                                            fontSize = 24.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            fontFamily = FontFamily.Monospace
-                                        )
-                                        Text(text = "Days", color = ReforgeTextMuted, fontSize = 12.sp)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Relapse action warning button
-            item {
-                Button(
-                    onClick = { showRelapseDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = ColorLung.copy(alpha = 0.15f), contentColor = ColorLung),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, ColorLung.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                        .testTag("report_relapse_button"),
-                    shape = RoundedCornerShape(12.dp)
+                TextButton(
+                    onClick = { showJourneyTools = !showJourneyTools },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(Icons.Default.Healing, contentDescription = "Heart Icon", modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("I Relapsed (Undergo Therapist Analysis)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (showJourneyTools) "Hide journey tools" else "View journey tools",
+                        color = ReforgeTextMuted,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = if (showJourneyTools) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        tint = ReforgeTextMuted,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
 
-            // Dopamine Timeline recovery milestones
-            item {
-                Text(
-                    text = "BRAIN TIMELINE MILESTONES",
-                    color = ReforgeTextMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.0.sp,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-            }
-
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf("Smoking", "Alcohol", "Porn", "Gambling").forEach { name ->
-                        val active = timelineSelectedAddiction == name
-                        val color = when (name) {
-                            "Alcohol" -> ColorBrain
-                            "Smoking" -> ColorLung
-                            "Porn" -> ColorPorn
-                            "Gambling" -> ColorGambling
-                            else -> ReforgeLime
-                        }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (active) color.copy(alpha = 0.25f) else ReforgeSurface)
-                                .border(
-                                    width = 1.dp,
-                                    color = if (active) color else Color(0xFF79747E).copy(alpha = 0.12f),
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                                .clickable { timelineSelectedAddiction = name }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = name,
-                                color = if (active) color else ReforgeTextMuted,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-            }
-
-            item {
-                val currentClock = clocks.find { it.addictionName.lowercase() == timelineSelectedAddiction.lowercase() }
-                val daysClean = if (currentClock != null) {
-                    val diffMs = System.currentTimeMillis() - currentClock.lastResetTimestamp
-                    (diffMs / (1000 * 60 * 60 * 24)).coerceAtLeast(0)
-                } else {
-                    0L
-                }
-
-                val milestones = when (timelineSelectedAddiction) {
-                    "Alcohol" -> listOf(
-                        Triple(1, "Clarified baseline. Sleep cycle begins healing & hangover clears.", daysClean >= 1),
-                        Triple(3, "Physical withdrawal symptoms subside. Internal system stabilizer active.", daysClean >= 3),
-                        Triple(14, "Breathing & deep REM sleep cycles improve. Liver repair begins.", daysClean >= 14),
-                        Triple(30, "Circulation improves. Prefrontal gray matter volume starts to recover.", daysClean >= 30),
-                        Triple(90, "Major recovery milestone: Dopamine baseline restoration, improved liver fat levels.", daysClean >= 90)
-                    )
-                    "Porn" -> listOf(
-                        Triple(1, "Mental clarity reset. Intentional dopamine detox begins.", daysClean >= 1),
-                        Triple(3, "Initial surge in androgen receptors. High craving alert.", daysClean >= 3),
-                        Triple(14, "Frontal lobe gray matter starts rewiring, improved social presence.", daysClean >= 14),
-                        Triple(30, "Dopamine sensitivity recovers. Reduced baseline anxiety.", daysClean >= 30),
-                        Triple(90, "Major recovery milestone: Complete neuroplastic reset, deep confidence restored.", daysClean >= 90)
-                    )
-                    "Gambling" -> listOf(
-                        Triple(1, "Financial drain halted. Subconscious chasing-loss impulse stops.", daysClean >= 1),
-                        Triple(3, "Impulse peak. Adrenaline spikes subside, cortisol levels decline.", daysClean >= 3),
-                        Triple(14, "Financial anxiety decreases, logical risk-evaluation pathways return.", daysClean >= 14),
-                        Triple(30, "Reward pathways begin recalibration, prefrontal self-control restored.", daysClean >= 30),
-                        Triple(90, "Major recovery milestone: Long-term cognitive rebuild milestone. Core habit loop shattered.", daysClean >= 90)
-                    )
-                    else -> listOf( // "Smoking"
-                        Triple(1, "Carbon monoxide levels drop, oxygen levels in blood normalize.", daysClean >= 1),
-                        Triple(3, "Nicotine withdrawal peaking. Bronchial tubes begin relaxing.", daysClean >= 3),
-                        Triple(14, "Breathing improving. Lung function improves up to 30%.", daysClean >= 14),
-                        Triple(30, "Circulation improving. Coughing, fatigue, and shortness of breath decrease.", daysClean >= 30),
-                        Triple(90, "Major recovery milestone: Cilia in lungs fully regrown, risk of infection dropped.", daysClean >= 90)
-                    )
-                }
-
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = ReforgeSurface),
-                    shape = RoundedCornerShape(20.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp)
-                        .border(
-                            width = 1.dp,
-                            color = Color(0xFF79747E).copy(alpha = 0.12f),
-                            shape = RoundedCornerShape(20.dp)
-                        )
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Text(
-                            text = "$timelineSelectedAddiction Progress: $daysClean Days Clean",
-                            color = when (timelineSelectedAddiction) {
-                                "Alcohol" -> ColorBrain
-                                "Smoking" -> ColorLung
-                                "Porn" -> ColorPorn
-                                "Gambling" -> ColorGambling
-                                else -> ReforgeLime
-                            },
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        milestones.forEach { (day, text, completed) ->
-                            TimelineMilestoneItem(day = day, text = text, completed = completed)
-                        }
-                    }
-                }
-            }
         } else if (activeSubTab == "Confidence") {
             // Confidence Section
             item {
@@ -1615,6 +1427,8 @@ fun JourneyScreen(
             item {
                 Spacer(modifier = Modifier.height(80.dp))
             }
+        } else if (activeSubTab == "Memory") {
+            aiMemoryTabSection(viewModel)
         } else {
             transformationIntelligenceSection(viewModel)
         }
@@ -2322,6 +2136,431 @@ fun TimelineMilestoneItem(
     }
 }
 
+fun androidx.compose.foundation.lazy.LazyListScope.aiMemoryTabSection(viewModel: ReforgeViewModel) {
+    item {
+        AiMemoryPanel(viewModel)
+    }
+}
+
+@Composable
+fun AiMemoryPanel(
+    viewModel: ReforgeViewModel
+) {
+    val aiMemoryState by viewModel.aiMemory.collectAsState()
+    val memoryJsonStr = aiMemoryState?.memoryJson ?: "{}"
+    val json = remember(memoryJsonStr) {
+        try {
+            org.json.JSONObject(memoryJsonStr)
+        } catch (e: Exception) {
+            org.json.JSONObject()
+        }
+    }
+
+    val preferredFoods = remember(json) {
+        val list = mutableListOf<String>()
+        val arr = json.optJSONArray("preferred_foods")
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                list.add(arr.optString(i))
+            }
+        }
+        list
+    }
+
+    val biggestTriggers = remember(json) {
+        val list = mutableListOf<String>()
+        val arr = json.optJSONArray("biggest_triggers")
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                list.add(arr.optString(i))
+            }
+        }
+        list
+    }
+
+    val bestWorkoutTime = json.optString("best_workout_time", "Not set")
+    val confidenceIssue = json.optString("confidence_issue", "Not set")
+    val quitSmokingGoal = if (json.has("quit_smoking_goal")) {
+        if (json.optBoolean("quit_smoking_goal")) "Active Target" else "Inactive"
+    } else {
+        "Not set"
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // AI Memory Header Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = ReforgeSurface),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, ReforgeSurfaceVariant, RoundedCornerShape(16.dp))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Memory,
+                        contentDescription = null,
+                        tint = ReforgeLime,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "🧠 COGNITION & PERSONALIZATION LAYER",
+                        color = ReforgeLime,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.0.sp
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Reforge Intelligence runs a semantic reflection filter on user messages asynchronously. Key triggers, health routines, and nutritional habits are stored in local SQLite records. These memories are injected back into Gemini system prompts dynamically, solving the context window statelessness problem without wasting user tokens.",
+                    color = ReforgeTextMuted,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+
+        // Memory Attribute Details Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = ReforgeSurface),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, ReforgeSurfaceVariant, RoundedCornerShape(16.dp))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "EXTRACTED COGNITIVE ATTRIBUTES",
+                    color = ReforgeTextPrimary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                // Attributes List
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Best Workout Time
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.AccessTime, contentDescription = null, tint = ColorBrain, modifier = Modifier.size(16.dp))
+                            Text("Best Workout Time", color = ReforgeTextPrimary, fontSize = 13.sp)
+                        }
+                        Text(
+                            text = bestWorkoutTime,
+                            color = if (bestWorkoutTime != "Not set") ReforgeLime else ReforgeTextMuted,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    HorizontalDivider(color = ReforgeSurfaceVariant)
+
+                    // Confidence Issue
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.SentimentDissatisfied, contentDescription = null, tint = ColorSleep, modifier = Modifier.size(16.dp))
+                            Text("Confidence Challenge", color = ReforgeTextPrimary, fontSize = 13.sp)
+                        }
+                        Text(
+                            text = confidenceIssue,
+                            color = if (confidenceIssue != "Not set") ReforgeLime else ReforgeTextMuted,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    HorizontalDivider(color = ReforgeSurfaceVariant)
+
+                    // Quit Smoking Goal
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.Block, contentDescription = null, tint = ColorLung, modifier = Modifier.size(16.dp))
+                            Text("Quit Smoking Goal", color = ReforgeTextPrimary, fontSize = 13.sp)
+                        }
+                        Text(
+                            text = quitSmokingGoal,
+                            color = if (quitSmokingGoal == "Active Target") ReforgeLime else ReforgeTextMuted,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        // Preferred Foods Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = ReforgeSurface),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, ReforgeSurfaceVariant, RoundedCornerShape(16.dp))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Restaurant,
+                        contentDescription = null,
+                        tint = ReforgeLime,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "PREFERRED FOODS (NUTRITION ANCHORS)",
+                        color = ReforgeTextPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (preferredFoods.isEmpty()) {
+                    Text(
+                        text = "No diet preferences logged yet. Talk about your favorite meals in chat to teach Reforge.",
+                        color = ReforgeTextMuted,
+                        fontSize = 12.sp
+                    )
+                } else {
+                    // Display foods in neat rows of chips
+                    val rows = preferredFoods.chunked(3)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        rows.forEach { rowItems ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                rowItems.forEach { food ->
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(ReforgeLimeMuted)
+                                            .border(1.dp, ReforgeLime.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                            .padding(vertical = 8.dp, horizontal = 6.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = food,
+                                            color = ReforgeLime,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    }
+                                }
+                                repeat(3 - rowItems.size) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Biggest Triggers Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = ReforgeSurface),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, ReforgeSurfaceVariant, RoundedCornerShape(16.dp))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = ColorLung,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "BIGGEST RELAPSE TRIGGERS",
+                        color = ReforgeTextPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (biggestTriggers.isEmpty()) {
+                    Text(
+                        text = "No neural triggers flagged yet. Reforge logs environmental triggers during coaching.",
+                        color = ReforgeTextMuted,
+                        fontSize = 12.sp
+                    )
+                } else {
+                    // Display triggers in neat rows of chips
+                    val rows = biggestTriggers.chunked(3)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        rows.forEach { rowItems ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                rowItems.forEach { trigger ->
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(ColorLung.copy(alpha = 0.15f))
+                                            .border(1.dp, ColorLung.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                            .padding(vertical = 8.dp, horizontal = 6.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = trigger,
+                                            color = ColorLung,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    }
+                                }
+                                repeat(3 - rowItems.size) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // SQLite Schema & Raw Storage Visualizer
+        Card(
+            colors = CardDefaults.cardColors(containerColor = ReforgeBg),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, ReforgeSurfaceVariant, RoundedCornerShape(16.dp))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Dns,
+                        contentDescription = null,
+                        tint = ReforgeLime,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "SQL DATABASE SCHEMAS & LIVE RECORDS",
+                        color = ReforgeTextPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ReforgeSurface)
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = "TABLE: ai_memories",
+                        color = ReforgeLime,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "id: INTEGER PRIMARY KEY = 1\nmemoryJson: TEXT",
+                        color = ReforgeTextMuted,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "LIVE JSON PAYLOAD:",
+                        color = ReforgeTextPrimary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(ReforgeSurfaceVariant)
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = memoryJsonStr,
+                            color = ReforgeTextPrimary,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Simulate/Insert Test Data Button
+                Button(
+                    onClick = {
+                        val testMemory = "{\"preferred_foods\":[\"avocado toast\",\"salmon\",\"chia seeds\",\"eggs\"],\"biggest_triggers\":[\"late night stress\",\"peer pressure\",\"work burnout\"],\"best_workout_time\":\"morning\",\"confidence_issue\":\"public speaking\",\"quit_smoking_goal\":true}"
+                        viewModel.updateAiMemory(testMemory)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ReforgeLime.copy(alpha = 0.15f),
+                        contentColor = ReforgeLime
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, ReforgeLime.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .testTag("simulate_memory_button"),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Simulate",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "Simulate AI Memory Extraction", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
 fun androidx.compose.foundation.lazy.LazyListScope.transformationIntelligenceSection(viewModel: ReforgeViewModel) {
     item {
         TransformationIntelligencePanel(viewModel)
@@ -2547,6 +2786,14 @@ fun TransformationIntelligencePanel(
                 "analysisJson (TEXT)",
                 "riskLevel (TEXT)",
                 "recoveryScore (INTEGER)"
+            )
+        ),
+        DatabaseTableInfo(
+            name = "ai_memories",
+            description = "Asynchronous AI memory layer preserving coach context.",
+            columns = listOf(
+                "id (INTEGER PRIMARY KEY)",
+                "memoryJson (TEXT)"
             )
         )
     )
@@ -3206,6 +3453,83 @@ fun TransformationIntelligencePanel(
         }
 
         Spacer(modifier = Modifier.height(80.dp))
+    }
+}
+
+data class JourneyStoryEvent(
+    val day: Int,
+    val title: String,
+    val body: String
+)
+
+@Composable
+fun JourneyStoryTimeline(events: List<JourneyStoryEvent>) {
+    val scrollState = rememberScrollState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = "Timeline",
+            color = ReforgeTextPrimary,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scrollState),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            events.forEachIndexed { index, event ->
+                Column(
+                    modifier = Modifier.width(190.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(ReforgeLime)
+                        )
+                        if (index != events.lastIndex) {
+                            Box(
+                                modifier = Modifier
+                                    .height(1.dp)
+                                    .weight(1f)
+                                    .background(ReforgeSurfaceVariant)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "Day ${event.day}",
+                        color = ReforgeLime,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = event.title,
+                        color = ReforgeTextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = event.body,
+                        color = ReforgeTextMuted,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+        }
     }
 }
 

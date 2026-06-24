@@ -2,24 +2,27 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Professional Polish Theme (Dark-Mode-First Slate/Charcoal)
-val ReforgeBg = Color(0xFF121212)           // Deep charcoal background (#121212)
-val ReforgeSurface = Color(0xFF1E1E1E)      // Slate surface (#1E1E1E)
-val ReforgeSurfaceVariant = Color(0xFF2C2C2C) // High-contrast input/container accents
+// Calm premium dark palette
+val ReforgeBg = Color(0xFF0F1117)              // Deep Slate
+val ReforgeSurface = Color(0x14FFFFFF)         // Glass card surface: rgba(255,255,255,0.08)
+val ReforgeSurfaceVariant = Color(0x1FFFFFFF)  // Glass control/input surface: rgba(255,255,255,0.12)
 
-val ReforgeLime = Color(0xFF00E676)         // Electric high-contrast emerald green for progress tracking (#00E676)
-val ReforgeLimeMuted = Color(0xFF0A2F1D)    // Cozy deep emerald muted container background
-val ReforgeTextPrimary = Color(0xFFF1F5F9)  // High-visibility slate primary text
-val ReforgeTextMuted = Color(0xFF94A3B8)    // Readable soft slate secondary text
+val ReforgeLime = Color(0xFF7AA2FF)            // Primary Accent: Soft Aurora Blue
+val ReforgeLimeMuted = Color(0x267AA2FF)       // Soft blue selected/glass state
+val ReforgeLavender = Color(0xFFB69CFF)        // Secondary Accent: Lavender
+val ReforgeSuccess = Color(0xFF59C98A)         // Success: Muted Emerald
+val ReforgeWarning = Color(0xFFE8B04F)         // Warning: Warm Amber
+val ReforgeTextPrimary = Color(0xFFF4F7FB)
+val ReforgeTextMuted = Color(0xFFA8B0C2)
 
 // Highlight brand colors
-val HighlightBg = Color(0xFF1E293B)
-val HighlightBorder = Color(0xFF38BDF8)
-val HighlightText = Color(0xFF38BDF8)
+val HighlightBg = Color(0x267AA2FF)
+val HighlightBorder = ReforgeLime
+val HighlightText = ReforgeLime
 
-// Status colors (Clean, vibrant dark-mode precise tones)
-val ColorBrain = Color(0xFF3B82F6)   // Brain - Focus electric blue
-val ColorLung = Color(0xFFEF4444)    // Lung/Reset - Alert bright red for clean visibility
-val ColorSleep = Color(0xFF8B5CF6)   // Sleep - Tranquil deep lavender
-val ColorPorn = Color(0xFFF59E0B)    // Muted brand amber/orange
-val ColorGambling = Color(0xFFEC4899) // Gambling - Pink/Magenta
+// Status colors tuned away from harsh neon/red
+val ColorBrain = ReforgeLime
+val ColorLung = ReforgeWarning
+val ColorSleep = ReforgeLavender
+val ColorPorn = ReforgeWarning
+val ColorGambling = Color(0xFFD98CFF)

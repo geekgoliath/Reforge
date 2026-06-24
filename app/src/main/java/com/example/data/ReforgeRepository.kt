@@ -1,36 +1,73 @@
 package com.example.data
 
-import android.content.Context
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.firstOrNull
 
 class ReforgeRepository(private val dao: ReforgeDao) {
 
     val userProfile: Flow<UserProfile?> = dao.getUserProfile()
     val allHabits: Flow<List<Habit>> = dao.getAllHabits()
-    val relapseEvents: Flow<List<RelapseEvent>> = dao.getAllRelapseEvents()
-    val journalEntries: Flow<List<JournalEntry>> = dao.getAllJournalEntries()
+    val habitEvents: Flow<List<HabitEvent>> = dao.getAllHabitEvents()
+    val allGoals: Flow<List<Goal>> = dao.getAllGoals()
+    val milestones: Flow<List<Milestone>> = dao.getAllMilestones()
+    val milestoneProgress: Flow<List<MilestoneProgress>> = dao.getAllMilestoneProgress()
+    val aiMemory: Flow<AiMemory?> = dao.getAiMemory()
     val checkIns: Flow<List<DailyCheckIn>> = dao.getAllCheckIns()
+    val coachInsights: Flow<List<CoachInsight>> = dao.getAllCoachInsights()
     val coachMessages: Flow<List<CoachMessage>> = dao.getCoachMessages()
     val addictionClocks: Flow<List<AddictionClock>> = dao.getAllAddictionClocks()
-    val habitLogs: Flow<List<HabitLog>> = dao.getAllHabitLogs()
     val weightHistory: Flow<List<WeightHistory>> = dao.getWeightHistory()
-    val dailyCoachAnalyses: Flow<List<DailyCoachAnalysis>> = dao.getAllDailyCoachAnalyses()
     val allExercises: Flow<List<Exercise>> = dao.getAllExercises()
     val confidenceChallenges: Flow<List<ConfidenceChallenge>> = dao.getAllConfidenceChallenges()
+    val hairLogs: Flow<List<HairLog>> = dao.getAllHairLogs()
+    val photoAnalyses: Flow<List<PhotoAnalysisLog>> = dao.getAllPhotoAnalyses()
+    val journalEntries: Flow<List<JournalEntry>> = dao.getAllJournalEntries()
+    val relapseEvents: Flow<List<RelapseEvent>> = dao.getAllRelapseEvents()
+    val dailyCoachAnalyses: Flow<List<DailyCoachAnalysis>> = dao.getAllDailyCoachAnalyses()
 
-    suspend fun getAllExercisesDirect(): List<Exercise> = dao.getAllExercisesDirect()
-    suspend fun insertExercise(exercise: Exercise) = dao.insertExercise(exercise)
-    suspend fun clearExercises() = dao.clearExercises()
+    // --- Direct Methods ---
+    suspend fun getUserProfileDirect(): UserProfile? = dao.getUserProfileDirect()
+    suspend fun insertUserProfile(profile: UserProfile) = dao.insertUserProfile(profile)
+    suspend fun updateUserProfile(profile: UserProfile) = dao.updateUserProfile(profile)
 
-    suspend fun getAllConfidenceChallengesDirect(): List<ConfidenceChallenge> = dao.getAllConfidenceChallengesDirect()
-    suspend fun insertConfidenceChallenge(challenge: ConfidenceChallenge) = dao.insertConfidenceChallenge(challenge)
-    suspend fun updateConfidenceChallenge(challenge: ConfidenceChallenge) = dao.updateConfidenceChallenge(challenge)
-    suspend fun clearConfidenceChallenges() = dao.clearConfidenceChallenges()
+    suspend fun getAllGoalsDirect(): List<Goal> = dao.getAllGoalsDirect()
+    suspend fun insertGoal(goal: Goal) = dao.insertGoal(goal)
+    suspend fun deleteGoal(id: Int) = dao.deleteGoal(id)
+    suspend fun clearGoals() = dao.clearGoals()
 
+    suspend fun getAllHabitsDirect(): List<Habit> = dao.getAllHabitsDirect()
+    suspend fun insertHabit(habit: Habit): Long = dao.insertHabit(habit)
+    suspend fun updateHabit(habit: Habit) = dao.updateHabit(habit)
+    suspend fun deleteHabit(id: Int) = dao.deleteHabit(id)
+    suspend fun clearHabits() = dao.clearHabits()
+
+    suspend fun getAllHabitEventsDirect(): List<HabitEvent> = dao.getAllHabitEventsDirect()
+    fun getHabitEventsForHabit(habitId: Int): Flow<List<HabitEvent>> = dao.getHabitEventsForHabit(habitId)
+    suspend fun insertHabitEvent(event: HabitEvent) = dao.insertHabitEvent(event)
+    suspend fun deleteHabitEvent(id: Int) = dao.deleteHabitEvent(id)
+    suspend fun clearHabitEvents() = dao.clearHabitEvents()
+
+    suspend fun getAllMilestonesDirect(): List<Milestone> = dao.getAllMilestonesDirect()
+    fun getMilestonesForHabit(habitId: Int): Flow<List<Milestone>> = dao.getMilestonesForHabit(habitId)
+    suspend fun insertMilestone(milestone: Milestone): Long = dao.insertMilestone(milestone)
+    suspend fun clearMilestones() = dao.clearMilestones()
+
+    suspend fun getMilestoneProgressForMilestone(milestoneId: Int): MilestoneProgress? = dao.getMilestoneProgressForMilestone(milestoneId)
+    suspend fun insertMilestoneProgress(progress: MilestoneProgress) = dao.insertMilestoneProgress(progress)
+    suspend fun clearMilestoneProgress() = dao.clearMilestoneProgress()
+
+    suspend fun getAiMemoryDirect(): AiMemory? = dao.getAiMemoryDirect()
+    suspend fun insertAiMemory(memory: AiMemory) = dao.insertAiMemory(memory)
+
+    suspend fun getCheckInForDate(date: String): DailyCheckIn? = dao.getCheckInForDate(date)
+    suspend fun insertCheckIn(checkIn: DailyCheckIn) = dao.insertCheckIn(checkIn)
+
+    suspend fun getCoachInsightForDate(date: String): CoachInsight? = dao.getCoachInsightForDate(date)
+    suspend fun insertCoachInsight(insight: CoachInsight) = dao.insertCoachInsight(insight)
+    suspend fun clearCoachInsights() = dao.clearCoachInsights()
+
+    suspend fun getAllWorkoutsDirect(): List<Workout> = dao.getAllWorkoutsDirect()
     fun getWorkoutsForDate(date: String): Flow<List<Workout>> = dao.getWorkoutsForDate(date)
     suspend fun getWorkoutsForDateDirect(date: String): List<Workout> = dao.getWorkoutsForDateDirect(date)
-    suspend fun getAllWorkoutsDirect(): List<Workout> = dao.getAllWorkoutsDirect()
     suspend fun insertWorkout(workout: Workout) = dao.insertWorkout(workout)
     suspend fun updateWorkout(workout: Workout) = dao.updateWorkout(workout)
     suspend fun clearWorkoutsForDate(date: String) = dao.clearWorkoutsForDate(date)
@@ -43,63 +80,31 @@ class ReforgeRepository(private val dao: ReforgeDao) {
     suspend fun clearMealsForDate(date: String) = dao.clearMealsForDate(date)
 
     suspend fun insertWeightEntry(entry: WeightHistory) = dao.insertWeightEntry(entry)
-    suspend fun insertHabitLog(log: HabitLog) = dao.insertHabitLog(log)
 
-    suspend fun insertUserProfile(profile: UserProfile) {
-        dao.insertUserProfile(profile)
-    }
+    suspend fun insertCoachMessage(message: CoachMessage) = dao.insertCoachMessage(message)
+    suspend fun clearCoachMessages() = dao.clearCoachMessages()
 
-    suspend fun updateUserProfile(profile: UserProfile) {
-        dao.updateUserProfile(profile)
-    }
+    suspend fun getAllAddictionClocksDirect(): List<AddictionClock> = dao.getAllAddictionClocksDirect()
+    suspend fun insertAddictionClock(clock: AddictionClock) = dao.insertAddictionClock(clock)
+    suspend fun clearAddictionClocks() = dao.clearAddictionClocks()
 
-    suspend fun insertHabit(habit: Habit) {
-        dao.insertHabit(habit)
-    }
+    suspend fun getAllExercisesDirect(): List<Exercise> = dao.getAllExercisesDirect()
+    suspend fun insertExercise(exercise: Exercise) = dao.insertExercise(exercise)
+    suspend fun clearExercises() = dao.clearExercises()
 
-    suspend fun updateHabit(habit: Habit) {
-        dao.updateHabit(habit)
-    }
+    suspend fun getAllConfidenceChallengesDirect(): List<ConfidenceChallenge> = dao.getAllConfidenceChallengesDirect()
+    suspend fun insertConfidenceChallenge(challenge: ConfidenceChallenge) = dao.insertConfidenceChallenge(challenge)
+    suspend fun updateConfidenceChallenge(challenge: ConfidenceChallenge) = dao.updateConfidenceChallenge(challenge)
+    suspend fun clearConfidenceChallenges() = dao.clearConfidenceChallenges()
 
-    suspend fun deleteHabit(id: Int) {
-        dao.deleteHabit(id)
-    }
+    suspend fun insertHairLog(log: HairLog) = dao.insertHairLog(log)
+    suspend fun insertPhotoAnalysis(log: PhotoAnalysisLog) = dao.insertPhotoAnalysis(log)
 
-    suspend fun insertRelapseEvent(event: RelapseEvent) {
-        dao.insertRelapseEvent(event)
-    }
-
-    suspend fun insertJournalEntry(entry: JournalEntry) {
-        dao.insertJournalEntry(entry)
-    }
-
-    suspend fun getCheckInForDate(date: String): DailyCheckIn? {
-        return dao.getCheckInForDate(date)
-    }
-
-    suspend fun insertCheckIn(checkIn: DailyCheckIn) {
-        dao.insertCheckIn(checkIn)
-    }
-
-    suspend fun getDailyCoachAnalysisForDate(date: String): DailyCoachAnalysis? {
-        return dao.getDailyCoachAnalysisForDate(date)
-    }
-
-    suspend fun insertDailyCoachAnalysis(analysis: DailyCoachAnalysis) {
-        dao.insertDailyCoachAnalysis(analysis)
-    }
-
-    suspend fun insertCoachMessage(message: CoachMessage) {
-        dao.insertCoachMessage(message)
-    }
-
-    suspend fun clearCoachMessages() {
-        dao.clearCoachMessages()
-    }
-
-    suspend fun insertAddictionClock(clock: AddictionClock) {
-        dao.insertAddictionClock(clock)
-    }
+    suspend fun insertRelapseEvent(event: RelapseEvent) = dao.insertRelapseEvent(event)
+    suspend fun getAllRelapseEventsDirect(): List<RelapseEvent> = dao.getAllRelapseEventsDirect()
+    suspend fun insertJournalEntry(entry: JournalEntry) = dao.insertJournalEntry(entry)
+    suspend fun getDailyCoachAnalysisForDate(date: String): DailyCoachAnalysis? = dao.getDailyCoachAnalysisForDate(date)
+    suspend fun insertDailyCoachAnalysis(analysis: DailyCoachAnalysis) = dao.insertDailyCoachAnalysis(analysis)
 
     suspend fun addXp(amount: Int) {
         val profile = dao.getUserProfileDirect() ?: UserProfile()
@@ -171,70 +176,102 @@ class ReforgeRepository(private val dao: ReforgeDao) {
             defaultChallenges.forEach { dao.insertConfidenceChallenge(it) }
         }
 
-        // Pre-populate if empty
         val currentProfile = dao.getUserProfileDirect()
         if (currentProfile == null) {
             dao.insertUserProfile(
                 UserProfile(
                     id = 1,
-                    name = "Vikas",
-                    age = 35,
-                    dob = "1991-03-15",
-                    birthTime = "14:30",
-                    birthPlace = "Delhi, India",
-                    weight = 78.4f,
-                    height = 178f,
-                    neck = 38f,
-                    waist = 90f,
-                    activityLevel = "Moderate",
-                    alcoholFrequency = "Weekly",
-                    smokingFrequency = "Daily",
-                    sleepHours = 7f,
-                    goals = "Gain Muscle,Quit Smoking,Quit Alcohol",
-                    level = 3,
-                    xp = 650,
-                    isOnboarded = true,
-                    addictions = "Alcohol,Smoking,Porn,Gambling",
-                    zodiacTheme = "Saturn in 6th house (Health & Discipline) aligns with the Pisces-Virgo Lunar Axis. The cosmos signals a powerful phase for cellular and neural purification.",
-                    recallScore = 80,
-                    readingStreak = 3,
-                    speakingPracticeMinutes = 15
-                )
-            )
-
-            // Dynamic timestamp offsets (ms)
-            val currentTime = System.currentTimeMillis()
-            val singleDayMs = 24L * 60L * 60L * 1000L
-
-            dao.insertAddictionClock(AddictionClock("Alcohol", currentTime - (5 * singleDayMs)))
-            dao.insertAddictionClock(AddictionClock("Smoking", currentTime - (2 * singleDayMs)))
-            dao.insertAddictionClock(AddictionClock("Porn", currentTime - (12 * singleDayMs)))
-            dao.insertAddictionClock(AddictionClock("Gambling", currentTime - (45 * singleDayMs)))
-
-            // Populate mock check-ins
-            dao.insertCheckIn(DailyCheckIn("2026-06-16", mood = 3, energy = 6, sleepQuality = 5, cravings = 3))
-            dao.insertCheckIn(DailyCheckIn("2026-06-15", mood = 2, energy = 4, sleepQuality = 4, cravings = 6))
-            dao.insertCheckIn(DailyCheckIn("2026-06-14", mood = 4, energy = 8, sleepQuality = 7, cravings = 1))
-
-            // Add standard protocol-aligned habits
-            dao.insertHabit(Habit(name = "Warm Water + Jeera/Ajwain", isBadHabit = false, lastCompletedDate = "", streak = 1))
-            dao.insertHabit(Habit(name = "Take NAC & Lion's Mane", isBadHabit = false, lastCompletedDate = "", streak = 1))
-            dao.insertHabit(Habit(name = "Wall Angels & Band Pull-Aparts", isBadHabit = false, lastCompletedDate = "", streak = 1))
-            dao.insertHabit(Habit(name = "Gym Weight Training (45 min)", isBadHabit = false, lastCompletedDate = "", streak = 1))
-            dao.insertHabit(Habit(name = "Biozyme Whey Protein", isBadHabit = false, lastCompletedDate = "", streak = 1))
-            dao.insertHabit(Habit(name = "Egg Breakfast + B-Complex", isBadHabit = false, lastCompletedDate = "", streak = 1))
-            dao.insertHabit(Habit(name = "No Smoking (Nicotine abstinence)", isBadHabit = true, lastCompletedDate = "", streak = 1))
-            dao.insertHabit(Habit(name = "No Alcohol (Cold Turkey)", isBadHabit = true, lastCompletedDate = "", streak = 1))
-            dao.insertHabit(Habit(name = "Warm Turmeric Milk Sleep Prep", isBadHabit = false, lastCompletedDate = "", streak = 1))
-
-            // Initial coach messages
-            dao.insertCoachMessage(
-                CoachMessage(
-                    role = "model",
-                    message = "Good morning Vikas! I am your AI Coach. I have loaded your complete **Total Transformation Protocol (35M RESET)**. You are quitting alcohol and smoking **cold turkey** after 10 years. Today's goal is strictly focused on discipline: stick to the morning schedule, complete your weight training session, and follow your supplement stack. How are you feeling today?",
-                    timestamp = currentTime - 50000
+                    name = "",
+                    age = 0,
+                    dob = "",
+                    birthTime = "",
+                    birthPlace = "",
+                    weight = 0f,
+                    height = 0f,
+                    neck = 0f,
+                    waist = 0f,
+                    activityLevel = "Sedentary",
+                    alcoholFrequency = "Abstinent",
+                    smokingFrequency = "Abstinent",
+                    sleepHours = 8f,
+                    goals = "",
+                    level = 1,
+                    xp = 0,
+                    isOnboarded = false,
+                    addictions = "",
+                    zodiacTheme = "",
+                    recallScore = 0,
+                    readingStreak = 0,
+                    speakingPracticeMinutes = 0,
+                    hairType = "Straight",
+                    hairFallSeverity = "Mild",
+                    familyBaldness = "None",
+                    scalpCondition = "Normal",
+                    budget = "Medium",
+                    currentLocation = "Delhi, India",
+                    foodPreferences = "Eggs, Chicken, Bananas, Curd",
+                    foodDislikes = "Oats"
                 )
             )
         }
+    }
+
+    suspend fun clearAllData() {
+        dao.clearUserProfile()
+        dao.clearHabits()
+        dao.clearGoals()
+        dao.clearHabitEvents()
+        dao.clearMilestones()
+        dao.clearMilestoneProgress()
+        dao.clearAiMemories()
+        dao.clearDailyCheckIns()
+        dao.clearCoachInsights()
+        dao.clearCoachMessages()
+        dao.clearAddictionClocks()
+        dao.clearWorkouts()
+        dao.clearMeals()
+        dao.clearWeightHistory()
+        dao.clearHairLogs()
+        dao.clearPhotoAnalysisLogs()
+        dao.clearRelapseEvents()
+        dao.clearJournalEntries()
+        dao.clearDailyCoachAnalyses()
+
+        // Insert fresh profile
+        dao.insertUserProfile(
+            UserProfile(
+                id = 1,
+                name = "",
+                age = 0,
+                dob = "",
+                birthTime = "",
+                birthPlace = "",
+                weight = 0f,
+                height = 0f,
+                neck = 0f,
+                waist = 0f,
+                activityLevel = "Sedentary",
+                alcoholFrequency = "Abstinent",
+                smokingFrequency = "Abstinent",
+                sleepHours = 8f,
+                goals = "",
+                level = 1,
+                xp = 0,
+                isOnboarded = false,
+                addictions = "",
+                zodiacTheme = "",
+                recallScore = 0,
+                readingStreak = 0,
+                speakingPracticeMinutes = 0,
+                hairType = "Straight",
+                hairFallSeverity = "Mild",
+                familyBaldness = "None",
+                scalpCondition = "Normal",
+                budget = "Medium",
+                currentLocation = "Delhi, India",
+                foodPreferences = "Eggs, Chicken, Bananas, Curd",
+                foodDislikes = "Oats"
+            )
+        )
     }
 }

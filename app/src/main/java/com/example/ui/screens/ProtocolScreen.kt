@@ -42,6 +42,7 @@ fun ProtocolScreen(
     val profile by viewModel.userProfile.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     var savedFilePath by remember { mutableStateOf("") }
+    var showRecoveryGuidance by rememberSaveable { mutableStateOf(false) }
 
     val daysList = remember {
         val list = mutableListOf<Pair<String, String>>()
@@ -157,52 +158,74 @@ fun ProtocolScreen(
             }
         }
 
-        // 1. MEDICAL WARNING HERO CARD (HIGH IMPACT)
+        // Recovery guidance is calm by default; details expand on request.
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
-                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = ReforgeSurface),
+                shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .border(
                         width = 1.dp,
-                        color = ColorLung.copy(alpha = 0.4f),
-                        shape = RoundedCornerShape(16.dp)
+                        color = ReforgeSurfaceVariant,
+                        shape = RoundedCornerShape(14.dp)
                     )
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showRecoveryGuidance = !showRecoveryGuidance },
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(30.dp)
                                 .clip(CircleShape)
-                                .background(ColorLung.copy(alpha = 0.15f)),
+                                .background(ReforgeLimeMuted),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = "Critical Medical Warning",
-                                tint = ColorLung,
+                                imageVector = Icons.Default.Spa,
+                                contentDescription = null,
+                                tint = ReforgeLime,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
-                        Text(
-                            text = "CRITICAL MEDICAL PROTOCOL",
-                            color = ColorLung,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.0.sp
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Recovery Guidance",
+                                color = ReforgeTextPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "You're in Week 2 of recovery.",
+                                color = ReforgeTextMuted,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Icon(
+                            imageVector = if (showRecoveryGuidance) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (showRecoveryGuidance) "Collapse recovery guidance" else "Expand recovery guidance",
+                            tint = ReforgeTextMuted
                         )
                     }
 
+                    if (showRecoveryGuidance) {
+                        val addictionsList = profile?.addictions?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+                        val dynamicWarningText = if (addictionsList.isNotEmpty()) {
+                            "${profile?.name?.ifBlank { "User" } ?: "User"}, you are reducing ${addictionsList.joinToString(" and ")}. Keep the next steps steady, simple, and supported."
+                        } else {
+                            "${profile?.name?.ifBlank { "User" } ?: "User"}, you are in an active recovery reset. Keep the next steps steady, simple, and supported."
+                        }
                     Text(
-                        text = "Vikas, you are quitting alcohol and nicotine COLD TURKEY after 10 years of use. This is a heroic but severe neurochemical shock.",
+                        text = dynamicWarningText,
                         color = ReforgeTextPrimary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -213,30 +236,39 @@ fun ProtocolScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .background(ColorLung.copy(alpha = 0.08f))
+                            .background(ReforgeSurfaceVariant.copy(alpha = 0.7f))
                             .padding(10.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = "🚨 ER RED FLAGS (Delirium Tremens):",
-                            color = ColorLung,
+                            text = "When to get urgent help",
+                            color = ReforgeTextPrimary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "• Severe uncontrollable hand tremors\n• Visual/auditory hallucinations\n• Extreme mental confusion, fever, or seizures\n👉 IF EXPERIENCED, GO TO THE ER IMMEDIATELY.",
-                            color = ReforgeTextPrimary,
+                            text = "Seek medical help immediately for severe tremors, hallucinations, confusion, high fever, or seizures.",
+                            color = ReforgeTextMuted,
                             fontSize = 11.sp,
                             lineHeight = 15.sp
                         )
                     }
 
                     Text(
-                        text = "First 7 Days Expectation: Brain chemistry dopamine receptors are flatlining. You WILL experience severe insomnia, irritability, and neural static. Do not negotiate. Stick to the scheduled environment design.",
+                        text = "Week 2 can still feel uneven. Prioritize sleep, hydration, meals, light movement, and support from someone you trust.",
                         color = ReforgeTextMuted,
                         fontSize = 11.sp,
                         lineHeight = 15.sp
                     )
+                    } else {
+                        Text(
+                            text = "Expand",
+                            color = ReforgeLime,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clickable { showRecoveryGuidance = true }
+                        )
+                    }
                 }
             }
         }

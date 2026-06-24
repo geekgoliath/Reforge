@@ -3,15 +3,20 @@ package com.example.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 
 private val ReforgeColorScheme = darkColorScheme(
     primary = ReforgeLime,
-    onPrimary = Color.Black,
+    onPrimary = ReforgeBg,
     primaryContainer = ReforgeLimeMuted,
     onPrimaryContainer = ReforgeTextPrimary,
-    secondary = ReforgeTextMuted,
-    onSecondary = Color.Black,
+    secondary = ReforgeLavender,
+    onSecondary = ReforgeBg,
+    secondaryContainer = ReforgeLavender.copy(alpha = 0.16f),
+    onSecondaryContainer = ReforgeTextPrimary,
+    tertiary = ReforgeSuccess,
+    onTertiary = ReforgeBg,
+    error = ReforgeWarning,
+    onError = ReforgeBg,
     background = ReforgeBg,
     onBackground = ReforgeTextPrimary,
     surface = ReforgeSurface,

@@ -210,4 +210,132 @@ object VedicAstrologyCalculator {
             planetaryPositions = planetaryPositions
         )
     }
+
+    data class EnergyForecast(
+        val morning: String, // "High", "Medium", "Low"
+        val afternoon: String,
+        val night: String
+    )
+
+    data class TransitAnalysis(
+        val date: String,
+        val transitMoonSign: String,
+        val transitMoonSignIndex: Int,
+        val houseFromNatalMoon: Int,
+        val isAshtamaChandra: Boolean,
+        val riskWindow: String,
+        val reason: String,
+        val suggestedFocus: String,
+        val avoidList: List<String>,
+        val recommendedList: List<String>,
+        val energyForecast: EnergyForecast,
+        val relapseMultiplier: Float
+    )
+
+    fun calculateTransitMoonSignIndex(date: Date): Int {
+        val calendar = Calendar.getInstance()
+        calendar.time = date
+        val year = calendar.get(Calendar.YEAR)
+        val month = calendar.get(Calendar.MONTH) + 1
+        val day = calendar.get(Calendar.DAY_OF_MONTH)
+        val hour = calendar.get(Calendar.HOUR_OF_DAY)
+        val minute = calendar.get(Calendar.MINUTE)
+        val decimalHour = hour + (minute / 60.0)
+
+        val y = if (month <= 2) year - 1 else year
+        val m = if (month <= 2) month + 12 else month
+        val a = y / 100
+        val b = a / 4
+        val c = 2 - a + b
+        val e = (365.25 * (y + 4716)).toInt()
+        val f = (30.6001 * (m + 1)).toInt()
+        val jd = c + day + e + f - 1524.5 + (decimalHour / 24.0)
+
+        val t = (jd - 2451545.0) / 36525.0
+        val ayanamsa = 22.44 + (1.396 * (year - 1900) / 100.0)
+
+        val moonMeanLong = (218.316 + 481267.881 * t) % 360.0
+        val moonMeanAnomaly = (134.963 + 477198.867 * t) % 360.0
+        val moonElongation = (297.85 + 445267.11 * t) % 360.0
+        val moonTrueLong = (moonMeanLong + 6.289 * sin(Math.toRadians(moonMeanAnomaly)) + 1.274 * sin(Math.toRadians(2 * moonElongation - moonMeanAnomaly)) + 0.658 * sin(Math.toRadians(2 * moonElongation)) + 0.214 * sin(Math.toRadians(2 * moonMeanAnomaly))) % 360.0
+        val moonSiderealLong = (moonTrueLong - ayanamsa + 360.0) % 360.0
+        return ((moonSiderealLong / 30.0).toInt() % 12 + 12) % 12
+    }
+
+    fun calculateTransit(dob: String, birthTime: String, birthPlace: String, transitDate: Date): TransitAnalysis {
+        val natalHoroscope = calculate(dob, birthTime, birthPlace)
+        val natalMoonSignIndex = ZODIAC_SIGNS.indexOf(natalHoroscope.moonSign)
+        val transitMoonSignIndex = calculateTransitMoonSignIndex(transitDate)
+        
+        val houseFromNatalMoon = (transitMoonSignIndex - natalMoonSignIndex + 12) % 12 + 1
+
+        val isAshtamaChandra = (houseFromNatalMoon == 8)
+        val isArdhaAshtama = (houseFromNatalMoon == 4)
+        val isDwadasa = (houseFromNatalMoon == 12)
+
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(transitDate)
+
+        // Setup values for different houses
+        val riskWindow: String
+        val reason: String
+        val suggestedFocus: String
+        val avoids: List<String>
+        val recommended: List<String>
+        val energy: EnergyForecast
+        val multiplier: Float
+
+        when (houseFromNatalMoon) {
+            8 -> {
+                riskWindow = "19:00 - 21:00"
+                reason = "Moon transiting 8th house from natal Moon (Ashtama Chandra). High emotional volatility and relapse vulnerability."
+                suggestedFocus = "Avoid isolation. Schedule workout before 6 PM."
+                avoids = listOf("Alcohol", "Impulsive spending", "Arguments")
+                recommended = listOf("Gym", "Walking", "Journaling")
+                energy = EnergyForecast("High", "Medium", "Low")
+                multiplier = 1.5f
+            }
+            12 -> {
+                riskWindow = "21:00 - 23:00"
+                reason = "Moon transiting 12th house from natal Moon (Dwadasa Chandra). Mind seeking escape, distraction risk."
+                suggestedFocus = "Leave screens away. Focus on relaxation, read a physical book."
+                avoids = listOf("Late night screens", "Impulsive decisions", "Sugary snacks")
+                recommended = listOf("Meditation", "Reading", "Warm bath")
+                energy = EnergyForecast("Medium", "Medium", "Low")
+                multiplier = 1.3f
+            }
+            4 -> {
+                riskWindow = "14:00 - 16:00"
+                reason = "Moon transiting 4th house from natal Moon (Ardha Ashtama Chandra). Mid-day emotional unrest."
+                suggestedFocus = "Take a 15-minute nature walk. Stay hydrated."
+                avoids = listOf("Caffeine abuse", "Isolation", "Arguments")
+                recommended = listOf("Short walks", "Deep breathing", "Green tea")
+                energy = EnergyForecast("Medium", "Low", "Medium")
+                multiplier = 1.2f
+            }
+            else -> {
+                riskWindow = "18:00 - 20:00"
+                reason = "Moon transiting ${houseFromNatalMoon}th house from natal Moon. Energetic support is stable."
+                suggestedFocus = "Channel focus into physical alignment and core goals."
+                avoids = listOf("Complacency", "Procrastination", "Junk food")
+                recommended = listOf("High protein meals", "Strength workout", "Deep sleep focus")
+                energy = EnergyForecast("High", "High", "Medium")
+                multiplier = 1.0f
+            }
+        }
+
+        return TransitAnalysis(
+            date = dateStr,
+            transitMoonSign = ZODIAC_SIGNS[transitMoonSignIndex],
+            transitMoonSignIndex = transitMoonSignIndex,
+            houseFromNatalMoon = houseFromNatalMoon,
+            isAshtamaChandra = isAshtamaChandra,
+            riskWindow = riskWindow,
+            reason = reason,
+            suggestedFocus = suggestedFocus,
+            avoidList = avoids,
+            recommendedList = recommended,
+            energyForecast = energy,
+            relapseMultiplier = multiplier
+        )
+    }
 }

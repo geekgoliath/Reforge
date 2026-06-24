@@ -31,6 +31,7 @@ import com.example.ui.screens.*
 import com.example.ui.theme.*
 
 sealed class ScreenTab(val route: String, val title: String, val icon: ImageVector) {
+    object Command : ScreenTab("command", "Command", Icons.Default.Dashboard)
     object Today : ScreenTab("today", "Today", Icons.Default.Home)
     object Protocol : ScreenTab("protocol", "Protocol", Icons.Default.Description)
     object Coach : ScreenTab("coach", "Coach", Icons.Default.ChatBubble)
@@ -45,7 +46,7 @@ fun ReforgeApp(
     val profile by viewModel.userProfile.collectAsState()
     val xpMessage by viewModel.xpAddedMessage.collectAsState()
 
-    var currentTab by remember { mutableStateOf<ScreenTab>(ScreenTab.Today) }
+    var currentTab by remember { mutableStateOf<ScreenTab>(ScreenTab.Command) }
 
     if (profile == null) {
         // App is loading DB initial values
@@ -70,11 +71,11 @@ fun ReforgeApp(
                     tonalElevation = 8.dp
                 ) {
                     val tabs = listOf(
+                        ScreenTab.Command,
                         ScreenTab.Today,
                         ScreenTab.Protocol,
                         ScreenTab.Coach,
-                        ScreenTab.Journey,
-                        ScreenTab.Profile
+                        ScreenTab.Journey
                     )
                     tabs.forEach { tab ->
                         val selected = currentTab == tab
@@ -114,6 +115,7 @@ fun ReforgeApp(
             ) {
                 // Swap layout screen tabs
                 when (currentTab) {
+                    ScreenTab.Command -> CommandCenterScreen(onSelect = { currentTab = it })
                     ScreenTab.Today -> TodayScreen(viewModel)
                     ScreenTab.Protocol -> ProtocolScreen(viewModel)
                     ScreenTab.Coach -> CoachScreen(viewModel)
@@ -168,31 +170,142 @@ fun ReforgeApp(
     }
 }
 
+data class CommandCenterItem(
+    val title: String,
+    val icon: ImageVector,
+    val destination: ScreenTab,
+    val tint: Color
+)
+
+@Composable
+fun CommandCenterScreen(
+    onSelect: (ScreenTab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val commands = listOf(
+        CommandCenterItem("Recovery", Icons.Default.Timeline, ScreenTab.Journey, ReforgeLime),
+        CommandCenterItem("Workout", Icons.Default.FitnessCenter, ScreenTab.Protocol, ColorBrain),
+        CommandCenterItem("Nutrition", Icons.Default.Restaurant, ScreenTab.Protocol, ReforgeSuccess),
+        CommandCenterItem("Journal", Icons.Default.EditNote, ScreenTab.Journey, ReforgeLavender),
+        CommandCenterItem("Coach", Icons.Default.ChatBubble, ScreenTab.Coach, ReforgeLime),
+        CommandCenterItem("Cognitive Gym", Icons.Default.Psychology, ScreenTab.Journey, ReforgeLavender),
+        CommandCenterItem("Confidence", Icons.Default.EmojiEvents, ScreenTab.Journey, ReforgeWarning),
+        CommandCenterItem("Reports", Icons.Default.Insights, ScreenTab.Journey, ColorBrain),
+        CommandCenterItem("Horoscope", Icons.Default.AutoAwesome, ScreenTab.Today, ReforgeLavender),
+        CommandCenterItem("Profile", Icons.Default.Person, ScreenTab.Profile, ReforgeTextMuted)
+    )
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(ReforgeBg)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        Column {
+            Text(
+                text = "Command Center",
+                color = ReforgeTextPrimary,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Everything important, one tap away.",
+                color = ReforgeTextMuted,
+                fontSize = 13.sp
+            )
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            commands.chunked(2).forEach { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    rowItems.forEach { item ->
+                        CommandTile(
+                            item = item,
+                            onClick = { onSelect(item.destination) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    if (rowItems.size == 1) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CommandTile(
+    item: CommandCenterItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .height(78.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(ReforgeSurface)
+            .border(1.dp, ReforgeSurfaceVariant, RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(item.tint.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = item.icon,
+                contentDescription = null,
+                tint = item.tint,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        Text(
+            text = item.title,
+            color = ReforgeTextPrimary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 16.sp
+        )
+    }
+}
+
 @Composable
 fun OnboardingLayout(viewModel: ReforgeViewModel) {
     var name by remember { mutableStateOf("") }
-    var ageText by remember { mutableStateOf("35") }
-    var weightText by remember { mutableStateOf("78.4") }
-    var heightText by remember { mutableStateOf("178") }
-    var dobText by remember { mutableStateOf("1991-03-15") }
-    var birthTimeText by remember { mutableStateOf("14:30") }
-    var birthPlaceText by remember { mutableStateOf("Delhi, India") }
+    var ageText by remember { mutableStateOf("") }
+    var weightText by remember { mutableStateOf("") }
+    var heightText by remember { mutableStateOf("") }
+    var dobText by remember { mutableStateOf("") }
+    var birthTimeText by remember { mutableStateOf("") }
+    var birthPlaceText by remember { mutableStateOf("") }
 
-    var neckText by remember { mutableStateOf("38.0") }
-    var waistText by remember { mutableStateOf("90.0") }
-    var activityLevel by remember { mutableStateOf("Moderate") }
-    var alcoholFrequency by remember { mutableStateOf("Weekly") }
-    var smokingFrequency by remember { mutableStateOf("Daily") }
-    var sleepHoursText by remember { mutableStateOf("7.0") }
+    var neckText by remember { mutableStateOf("") }
+    var waistText by remember { mutableStateOf("") }
+    var activityLevel by remember { mutableStateOf("Sedentary") }
+    var alcoholFrequency by remember { mutableStateOf("Abstinent") }
+    var smokingFrequency by remember { mutableStateOf("Abstinent") }
+    var sleepHoursText by remember { mutableStateOf("") }
 
     val goalOptions = listOf(
         "Gain Muscle", "Lose Fat", "Quit Smoking", "Quit Alcohol", 
-        "Improve Confidence", "Improve Memory", "Better Posture"
+        "Better Sleep", "Better Confidence", "Better Memory", "Posture Improvement"
     )
-    val selectedGoals = remember { mutableStateListOf("Gain Muscle", "Quit Smoking", "Quit Alcohol") }
+    val selectedGoals = remember { mutableStateListOf<String>() }
 
-    val struggleOptions = listOf("Alcohol", "Smoking", "Porn", "Phone Screen", "Sugar Junk")
-    val selectedStruggles = remember { mutableStateListOf("Alcohol", "Smoking") }
+    val struggleOptions = listOf("Smoking", "Alcohol", "Porn", "Junk Food", "Sugar", "Procrastination", "Social Anxiety")
+    val selectedStruggles = remember { mutableStateListOf<String>() }
 
     val isLoading by viewModel.isOnboardingLoading.collectAsState()
     val errorMsg by viewModel.onboardingError.collectAsState()
@@ -274,7 +387,7 @@ fun OnboardingLayout(viewModel: ReforgeViewModel) {
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("What is your Name?") },
-                    placeholder = { Text("Vikas") },
+                    placeholder = { Text("e.g. Alex") },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = ReforgeTextPrimary,
                         unfocusedTextColor = ReforgeTextPrimary,
@@ -650,18 +763,58 @@ fun OnboardingLayout(viewModel: ReforgeViewModel) {
 
             Button(
                 onClick = {
-                    val finalName = if (name.isBlank()) "Vikas" else name
-                    val age = ageText.toIntOrNull() ?: 35
-                    val weight = weightText.toFloatOrNull() ?: 78.4f
-                    val height = heightText.toFloatOrNull() ?: 178f
-                    val neck = neckText.toFloatOrNull() ?: 38f
-                    val waist = waistText.toFloatOrNull() ?: 90f
-                    val sleep = sleepHoursText.toFloatOrNull() ?: 7f
+                    val age = ageText.toIntOrNull()
+                    val weight = weightText.toFloatOrNull()
+                    val height = heightText.toFloatOrNull()
+                    val neck = neckText.toFloatOrNull() ?: 0f
+                    val waist = waistText.toFloatOrNull() ?: 0f
+                    val sleep = sleepHoursText.toFloatOrNull()
+
+                    if (name.isBlank()) {
+                        viewModel.setOnboardingError("Name cannot be blank.")
+                        return@Button
+                    }
+                    if (age == null || age <= 0) {
+                        viewModel.setOnboardingError("Please enter a valid age.")
+                        return@Button
+                    }
+                    if (dobText.isBlank()) {
+                        viewModel.setOnboardingError("Please enter a valid Date of Birth (YYYY-MM-DD).")
+                        return@Button
+                    }
+                    if (birthTimeText.isBlank()) {
+                        viewModel.setOnboardingError("Please enter a valid Birth Time (HH:MM).")
+                        return@Button
+                    }
+                    if (birthPlaceText.isBlank()) {
+                        viewModel.setOnboardingError("Please enter a valid Birth Place.")
+                        return@Button
+                    }
+                    if (height == null || height <= 0f) {
+                        viewModel.setOnboardingError("Please enter a valid height in cm.")
+                        return@Button
+                    }
+                    if (weight == null || weight <= 0f) {
+                        viewModel.setOnboardingError("Please enter a valid weight in kg.")
+                        return@Button
+                    }
+                    if (sleep == null || sleep <= 0f) {
+                        viewModel.setOnboardingError("Please enter valid sleep hours.")
+                        return@Button
+                    }
+                    if (selectedGoals.isEmpty()) {
+                        viewModel.setOnboardingError("Please select at least one goal.")
+                        return@Button
+                    }
+
+                    // Reset onboarding error
+                    viewModel.setOnboardingError(null)
+
                     val addictions = selectedStruggles.joinToString(",")
                     val goalsStr = selectedGoals.joinToString(",")
 
                     viewModel.updateProfile(
-                        name = finalName,
+                        name = name,
                         age = age,
                         dob = dobText,
                         birthTime = birthTimeText,

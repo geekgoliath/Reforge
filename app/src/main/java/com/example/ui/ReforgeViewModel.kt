@@ -26,6 +26,28 @@ class ReforgeViewModel(application: Application) : AndroidViewModel(application)
     val relapseEvents: StateFlow<List<RelapseEvent>>
     val weightHistory: StateFlow<List<WeightHistory>>
     val dailyCoachAnalyses: StateFlow<List<DailyCoachAnalysis>>
+    val aiMemory: StateFlow<AiMemory?>
+    val milestones: StateFlow<List<Milestone>>
+    val milestoneProgress: StateFlow<List<MilestoneProgress>>
+
+    private val _proposedHabit = MutableStateFlow<Habit?>(null)
+    val proposedHabit: StateFlow<Habit?> = _proposedHabit.asStateFlow()
+
+    // --- Astrology 2.0 & Scheduler Flows ---
+    private val _todayTransitAnalysis = MutableStateFlow<com.example.util.VedicAstrologyCalculator.TransitAnalysis?>(null)
+    val todayTransitAnalysis: StateFlow<com.example.util.VedicAstrologyCalculator.TransitAnalysis?> = _todayTransitAnalysis.asStateFlow()
+
+    private val _todayRelapseRiskPercent = MutableStateFlow<Int>(30)
+    val todayRelapseRiskPercent: StateFlow<Int> = _todayRelapseRiskPercent.asStateFlow()
+
+    private val _dailySchedule = MutableStateFlow<DailySchedule?>(null)
+    val dailySchedule: StateFlow<DailySchedule?> = _dailySchedule.asStateFlow()
+
+    private val _scheduledAlarms = MutableStateFlow<List<ScheduledAlarmInfo>>(emptyList())
+    val scheduledAlarms: StateFlow<List<ScheduledAlarmInfo>> = _scheduledAlarms.asStateFlow()
+
+    private val _isGeneratingSchedule = MutableStateFlow(false)
+    val isGeneratingSchedule: StateFlow<Boolean> = _isGeneratingSchedule.asStateFlow()
 
     private val _isCoachTyping = MutableStateFlow(false)
     val isCoachTyping: StateFlow<Boolean> = _isCoachTyping.asStateFlow()
@@ -101,6 +123,9 @@ class ReforgeViewModel(application: Application) : AndroidViewModel(application)
         relapseEvents = repository.relapseEvents.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
         weightHistory = repository.weightHistory.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
         dailyCoachAnalyses = repository.dailyCoachAnalyses.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+        aiMemory = repository.aiMemory.stateIn(viewModelScope, SharingStarted.Lazily, null)
+        milestones = repository.milestones.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+        milestoneProgress = repository.milestoneProgress.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
         allExercises = repository.allExercises.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
         confidenceChallenges = repository.confidenceChallenges.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
@@ -108,6 +133,16 @@ class ReforgeViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.preWalkData()
             loadAdaptiveEvents()
+        }
+
+        // Listen for profile changes to compute Vedic Astrology & load schedule
+        viewModelScope.launch {
+            userProfile.collect { profile ->
+                if (profile != null && profile.isOnboarded) {
+                    calculateAstrologyAndRisk()
+                    loadDailySchedule()
+                }
+            }
         }
     }
 
@@ -255,6 +290,41 @@ class ReforgeViewModel(application: Application) : AndroidViewModel(application)
                 )
                 repository.insertUserProfile(newProfile)
 
+                // Clear and insert goals to goals table
+                repository.clearGoals()
+                goals.split(",").filter { it.isNotBlank() }.forEach { goalName ->
+                    repository.insertGoal(Goal(name = goalName, targetDetails = "Transform target"))
+                }
+
+                // Clear and insert struggles/habits to habits table, then generate milestones and clocks
+                repository.clearHabits()
+                repository.clearMilestones()
+                repository.clearMilestoneProgress()
+                repository.clearAddictionClocks()
+
+                addictions.split(",").filter { it.isNotBlank() }.forEach { struggleName ->
+                    val habit = Habit(
+                        name = struggleName,
+                        isBadHabit = true,
+                        category = "Addiction",
+                        severity = "Moderate",
+                        createdByUser = true,
+                        createdByAi = false
+                    )
+                    val habitId = repository.insertHabit(habit)
+                    val savedHabit = habit.copy(id = habitId.toInt())
+                    
+                    // Insert addiction clock
+                    repository.insertAddictionClock(
+                        AddictionClock(
+                            addictionName = struggleName,
+                            lastResetTimestamp = System.currentTimeMillis()
+                        )
+                    )
+
+                    generateAndSaveMilestones(savedHabit)
+                }
+
                 // Inject initial customized welcome coach message
                 repository.clearCoachMessages()
                 repository.insertCoachMessage(
@@ -276,6 +346,104 @@ class ReforgeViewModel(application: Application) : AndroidViewModel(application)
                 android.util.Log.e("ReforgeViewModel", "Onboarding transformation plan error", e)
             }
         }
+    }
+
+    suspend fun generateAndSaveMilestones(habit: Habit) {
+        try {
+            val milestonesJson = GeminiManager.generateMilestonesForHabit(
+                habitName = habit.name,
+                category = habit.category,
+                severity = habit.severity
+            )
+            if (milestonesJson.isNotBlank()) {
+                val jsonObj = org.json.JSONObject(milestonesJson)
+                val milestonesArray = jsonObj.optJSONArray("milestones")
+                if (milestonesArray != null) {
+                    for (i in 0 until milestonesArray.length()) {
+                        val mObj = milestonesArray.optJSONObject(i) ?: continue
+                        val title = mObj.optString("title")
+                        val description = mObj.optString("description")
+                        val targetDays = mObj.optInt("targetDays")
+
+                        val milestoneId = repository.insertMilestone(
+                            Milestone(
+                                habitId = habit.id,
+                                title = title,
+                                description = description,
+                                targetDays = targetDays
+                            )
+                        )
+
+                        // Save default progress
+                        repository.insertMilestoneProgress(
+                            MilestoneProgress(
+                                milestoneId = milestoneId.toInt(),
+                                currentDays = 0,
+                                isCompleted = false
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("ReforgeViewModel", "Error generating milestones for ${habit.name}", e)
+        }
+    }
+
+    fun resetProfile() {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Cancel all alarms
+            com.example.util.NotificationScheduler.cancelAllReforgeAlarms(getApplication())
+            
+            // Clear shared preferences
+            val sp = getApplication<Application>().getSharedPreferences("daily_scheduler", android.content.Context.MODE_PRIVATE)
+            sp.edit().clear().apply()
+
+            repository.clearAllData()
+            _proposedHabit.value = null
+            _transformationReport.value = null
+            _nutritionExplanation.value = ""
+            _generatedWorkoutPlan.value = null
+            _dailyCoachingError.value = null
+            _relapseAnalysisResult.value = null
+            _todayTransitAnalysis.value = null
+            _todayRelapseRiskPercent.value = 30
+            _dailySchedule.value = null
+            _scheduledAlarms.value = emptyList()
+
+            // Re-populate exercises and confidence challenges
+            repository.preWalkData()
+        }
+    }
+
+    fun setOnboardingError(error: String?) {
+        _onboardingError.value = error
+    }
+
+    fun approveProposedHabit() {
+        val habit = _proposedHabit.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val id = repository.insertHabit(habit)
+            val savedHabit = habit.copy(id = id.toInt())
+            
+            // Insert clock
+            repository.insertAddictionClock(
+                AddictionClock(
+                    addictionName = habit.name,
+                    lastResetTimestamp = System.currentTimeMillis()
+                )
+            )
+
+            generateAndSaveMilestones(savedHabit)
+            
+            _proposedHabit.value = null
+            showXpGain("+50 XP: Habit Inferred & Tracked")
+            repository.addXp(50)
+        }
+    }
+
+    fun declineProposedHabit() {
+        _proposedHabit.value = null
     }
 
     fun getWorkoutsForDate(date: String): Flow<List<Workout>> {
@@ -372,6 +540,9 @@ class ReforgeViewModel(application: Application) : AndroidViewModel(application)
 
             // Trigger AI daily coach analysis
             triggerDailyCoachingAnalysis(mood, energy, sleep, cravings, finalWeight)
+
+            // Recalculate Astrology Transit and Risk Score based on today's check-in
+            calculateAstrologyAndRisk()
         }
     }
 
@@ -457,15 +628,60 @@ class ReforgeViewModel(application: Application) : AndroidViewModel(application)
             // 3. Fetch history
             val history = coachMessages.value
 
+            // Fetch profile name and current memory context
+            val profile = repository.getUserProfileDirect()
+            val userName = if (profile != null && profile.name.isNotBlank()) profile.name else "User"
+            val currentMemory = repository.getAiMemoryDirect()?.memoryJson ?: "{}"
+
             // 4. Call Gemini Model (using gemini-1.5-flash as default)
-            val responseText = GeminiManager.getCoachResponse(history, text)
+            val responseText = GeminiManager.getCoachResponse(history, text, userName, currentMemory)
 
             // 5. Save model response
             val modelMsg = CoachMessage(role = "model", message = responseText)
             repository.insertCoachMessage(modelMsg)
-
             _isCoachTyping.value = false
             repository.addXp(10) // 10 XP for active chat coaching
+
+            // Extract and update memory context asynchronously
+            try {
+                val updatedMemory = GeminiManager.extractMemories(text, responseText, currentMemory)
+                if (updatedMemory.isNotBlank() && updatedMemory != currentMemory) {
+                    repository.insertAiMemory(AiMemory(id = 1, memoryJson = updatedMemory))
+                }
+            } catch (me: Exception) {
+                Log.e("ReforgeViewModel", "Failed to extract and save AI memories", me)
+            }
+
+            // Extract proposed habit from user text asynchronously
+            val existingHabits = habits.value
+            launch(Dispatchers.IO) {
+                try {
+                    val result = GeminiManager.discoverHabitsFromText(text)
+                    if (result.isNotBlank()) {
+                        val jsonObj = org.json.JSONObject(result)
+                        val badHabitsArr = jsonObj.optJSONArray("bad_habits")
+                        if (badHabitsArr != null && badHabitsArr.length() > 0) {
+                            for (i in 0 until badHabitsArr.length()) {
+                                val habitName = badHabitsArr.getString(i)
+                                val alreadyTracked = existingHabits.any { it.name.lowercase() == habitName.lowercase() }
+                                if (!alreadyTracked) {
+                                    _proposedHabit.value = Habit(
+                                        name = habitName,
+                                        isBadHabit = true,
+                                        category = "Addiction",
+                                        severity = "Moderate",
+                                        createdByAi = true,
+                                        createdByUser = false
+                                    )
+                                    break
+                                }
+                            }
+                        }
+                    }
+                } catch (he: Exception) {
+                    Log.e("ReforgeViewModel", "Habit discovery failed", he)
+                }
+            }
         }
     }
 
@@ -479,6 +695,12 @@ class ReforgeViewModel(application: Application) : AndroidViewModel(application)
                     message = "Coach thread reset. Ask me anything about diet, overcoming cravings, or workout schedules! I am here to help you Reforge."
                 )
             )
+        }
+    }
+
+    fun updateAiMemory(memoryJson: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.insertAiMemory(AiMemory(id = 1, memoryJson = memoryJson))
         }
     }
 
@@ -605,6 +827,10 @@ class ReforgeViewModel(application: Application) : AndroidViewModel(application)
             val clock = AddictionClock(addictionName = addiction, lastResetTimestamp = System.currentTimeMillis())
             repository.insertAddictionClock(clock)
 
+            // Get dynamic profile name
+            val profile = repository.getUserProfileDirect()
+            val userName = if (profile != null && profile.name.isNotBlank()) profile.name else "User"
+
             // 2. Fetch CBT custom counsel from Gemini
             val advice = GeminiManager.analyzeRelapse(
                 addiction = addiction,
@@ -612,7 +838,8 @@ class ReforgeViewModel(application: Application) : AndroidViewModel(application)
                 whereContext = whereContext,
                 companion = companion,
                 emotion = emotion,
-                timeOfDay = timeOfDay
+                timeOfDay = timeOfDay,
+                userName = userName
             )
             
             // 3. Store event in database
@@ -629,11 +856,11 @@ class ReforgeViewModel(application: Application) : AndroidViewModel(application)
 
             _relapseAnalysisResult.value = advice
 
-            // 4. Inject a supportive therapist comment directly into the Chat Coach log so Vikas sees it immediately!
+            // 4. Inject a supportive therapist comment directly into the Chat Coach log so user sees it immediately!
             repository.insertCoachMessage(
                 CoachMessage(
                     role = "model",
-                    message = "❤️ **Therapist Intervention**: Vikas, you reported a relapse on $addiction. Do not feel shame—this is valuable behavioral data.\n\n$advice"
+                    message = "❤️ **Therapist Intervention**: $userName, you reported a relapse on $addiction. Do not feel shame—this is valuable behavioral data.\n\n$advice"
                 )
             )
         }
@@ -1025,7 +1252,7 @@ class ReforgeViewModel(application: Application) : AndroidViewModel(application)
                 // AI Analysis: Ask Gemini to synthesize adaptive comments
                 var aiExplanation = ""
                 try {
-                    aiExplanation = com.example.api.analyzeAdaptiveEngine(
+                    aiExplanation = com.example.api.GeminiManager.analyzeAdaptiveEngine(
                         goal = goal,
                         startWeight = startingWeight,
                         currentWeight = currentWeight,
@@ -1071,6 +1298,328 @@ class ReforgeViewModel(application: Application) : AndroidViewModel(application)
             }
         }
     }
+
+    // --- Astrology 2.0 & AI Scheduler Helper Functions ---
+    fun calculateAstrologyAndRisk() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val profile = repository.getUserProfileDirect() ?: return@launch
+            if (!profile.isOnboarded || profile.dob.isBlank()) return@launch
+
+            try {
+                val transit = com.example.util.VedicAstrologyCalculator.calculateTransit(
+                    dob = profile.dob,
+                    birthTime = profile.birthTime,
+                    birthPlace = profile.birthPlace,
+                    transitDate = Date()
+                )
+                _todayTransitAnalysis.value = transit
+
+                // Calculate relapse risk based on biometrics & transits
+                val checkIn = repository.getCheckInForDate(getTodayString())
+                val sleepQuality = checkIn?.sleepQuality ?: 7
+                val cravings = checkIn?.cravings ?: 3
+                
+                val sevenDaysAgo = System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000)
+                val recentRelapsesCount = repository.getAllRelapseEventsDirect().count { it.timestamp >= sevenDaysAgo }
+
+                val sleepHoursActual = sleepQuality * 0.8f
+                val sleepDebt = (profile.sleepHours - sleepHoursActual).coerceAtLeast(0f)
+
+                val baseRisk = 30f + (sleepDebt * 8f) + (cravings * 3f) + (recentRelapsesCount * 10f)
+                val finalRisk = (baseRisk * transit.relapseMultiplier).coerceIn(10f, 99f).toInt()
+                
+                _todayRelapseRiskPercent.value = finalRisk
+            } catch (e: Exception) {
+                Log.e("ReforgeViewModel", "Failed to calculate astrological transits", e)
+            }
+        }
+    }
+
+    fun loadDailySchedule() {
+        val sp = getApplication<Application>().getSharedPreferences("daily_scheduler", android.content.Context.MODE_PRIVATE)
+        val meal1 = sp.getString("meal1", "") ?: ""
+        if (meal1.isNotBlank()) {
+            val schedule = DailySchedule(
+                meal1 = meal1,
+                meal2 = sp.getString("meal2", "") ?: "",
+                snack = sp.getString("snack", "") ?: "",
+                workout = sp.getString("workout", "") ?: "",
+                sleep = sp.getString("sleep", "") ?: ""
+            )
+            _dailySchedule.value = schedule
+            updateScheduledAlarmsList(schedule)
+        } else {
+            _dailySchedule.value = null
+            _scheduledAlarms.value = emptyList()
+        }
+    }
+
+    fun saveDailySchedule(schedule: DailySchedule) {
+        val sp = getApplication<Application>().getSharedPreferences("daily_scheduler", android.content.Context.MODE_PRIVATE)
+        sp.edit().apply {
+            putString("meal1", schedule.meal1)
+            putString("meal2", schedule.meal2)
+            putString("snack", schedule.snack)
+            putString("workout", schedule.workout)
+            putString("sleep", schedule.sleep)
+            apply()
+        }
+        _dailySchedule.value = schedule
+        updateScheduledAlarmsList(schedule)
+    }
+
+    fun generateDailySchedule(wakeTime: String, office: String, commute: String) {
+        val profile = userProfile.value ?: return
+        val transit = _todayTransitAnalysis.value ?: return
+        val riskWindow = transit.riskWindow
+        val goal = profile.goals.ifBlank { "muscle_gain" }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _isGeneratingSchedule.value = true
+            try {
+                val rawJson = com.example.api.GeminiManager.generateDailySchedule(
+                    wakeTime = wakeTime,
+                    office = office,
+                    commute = commute,
+                    goal = goal,
+                    riskWindow = riskWindow
+                )
+                val jsonObj = org.json.JSONObject(rawJson)
+                val schedule = DailySchedule(
+                    meal1 = jsonObj.optString("meal1", "09:00"),
+                    meal2 = jsonObj.optString("meal2", "13:00"),
+                    snack = jsonObj.optString("snack", "18:00"),
+                    workout = jsonObj.optString("workout", "10:00"),
+                    sleep = jsonObj.optString("sleep", "23:00")
+                )
+                
+                saveDailySchedule(schedule)
+                scheduleAlarmsForToday(schedule, riskWindow)
+                
+                showXpGain("+120 XP: AI Daily Routine Synchronized")
+                repository.addXp(120)
+            } catch (e: Exception) {
+                Log.e("ReforgeViewModel", "Failed to generate daily schedule", e)
+            } finally {
+                _isGeneratingSchedule.value = false
+            }
+        }
+    }
+
+    fun scheduleAlarmsForToday(schedule: DailySchedule, riskWindow: String) {
+        val context = getApplication<Application>()
+        com.example.util.NotificationScheduler.cancelAllReforgeAlarms(context)
+
+        val profile = userProfile.value ?: return
+        val streak = profile.level * 3 + 2
+
+        fun getMs(time: String) = com.example.util.NotificationScheduler.getEpochMsForTimeToday(time)
+
+        val workoutTimeMs = getMs(schedule.workout)
+        val prepTimeMs = workoutTimeMs - (5 * 60 * 1000)
+        com.example.util.NotificationScheduler.scheduleAlarm(
+            context,
+            com.example.util.NotificationScheduler.WORKOUT_PREP_ID,
+            prepTimeMs,
+            "Workout starting in 5 min",
+            "Prepare your gym gear and align your focus.",
+            "Preparation"
+        )
+
+        com.example.util.NotificationScheduler.scheduleAlarm(
+            context,
+            com.example.util.NotificationScheduler.WORKOUT_ACTION_ID,
+            workoutTimeMs,
+            "Time for workout",
+            "Begin your scheduled weight workout. Protect your physical consistency.",
+            "Action"
+        )
+
+        val recoveryTimeMs = workoutTimeMs + (45 * 60 * 1000)
+        com.example.util.NotificationScheduler.scheduleAlarm(
+            context,
+            com.example.util.NotificationScheduler.WORKOUT_RECOVERY_ID,
+            recoveryTimeMs,
+            "Great job. Workout complete",
+            "Protein shake due within 30 minutes.",
+            "Recovery"
+        )
+
+        val meal1TimeMs = getMs(schedule.meal1)
+        com.example.util.NotificationScheduler.scheduleAlarm(
+            context,
+            com.example.util.NotificationScheduler.MEAL1_ID,
+            meal1TimeMs,
+            "Breakfast is due",
+            "Fuel your metabolic state with breakfast.",
+            "Preparation"
+        )
+
+        val meal2TimeMs = getMs(schedule.meal2)
+        com.example.util.NotificationScheduler.scheduleAlarm(
+            context,
+            com.example.util.NotificationScheduler.MEAL2_ID,
+            meal2TimeMs,
+            "Lunch is due",
+            "Consume your lunch meal. Stay consistent.",
+            "Preparation"
+        )
+
+        val snackTimeMs = getMs(schedule.snack)
+        com.example.util.NotificationScheduler.scheduleAlarm(
+            context,
+            com.example.util.NotificationScheduler.SNACK_ID,
+            snackTimeMs,
+            "Snack is due",
+            "High craving risk detected. Have 25g peanuts or a banana now.",
+            "Risk"
+        )
+
+        val sleepTimeMs = getMs(schedule.sleep)
+        val windDownTimeMs = sleepTimeMs - (30 * 60 * 1000)
+        com.example.util.NotificationScheduler.scheduleAlarm(
+            context,
+            com.example.util.NotificationScheduler.SLEEP_WIND_DOWN_ID,
+            windDownTimeMs,
+            "Sleep Wind-down",
+            "Day $streak alcohol free. Keep protecting the streak.",
+            "Identity"
+        )
+
+        val riskStartHourStr = if (riskWindow.contains("-")) {
+            riskWindow.split("-")[0].trim()
+        } else {
+            "19:00"
+        }
+        val riskStartTimeMs = getMs(riskStartHourStr)
+        val riskAlertTimeMs = riskStartTimeMs - (15 * 60 * 1000)
+        com.example.util.NotificationScheduler.scheduleAlarm(
+            context,
+            com.example.util.NotificationScheduler.RISK_WINDOW_ID,
+            riskAlertTimeMs,
+            "Craving probability elevated",
+            "Historically this is your highest-risk period. Eat your planned snack now.",
+            "Risk"
+        )
+
+        updateScheduledAlarmsList(schedule)
+    }
+
+    fun updateScheduledAlarmsList(schedule: DailySchedule) {
+        val list = mutableListOf<ScheduledAlarmInfo>()
+        val formatter = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.US)
+
+        fun formatTime(timeStr: String, offsetMins: Int = 0): String {
+            val calendar = Calendar.getInstance().apply {
+                val parts = timeStr.split(":")
+                set(Calendar.HOUR_OF_DAY, parts.getOrNull(0)?.toIntOrNull() ?: 12)
+                set(Calendar.MINUTE, parts.getOrNull(1)?.toIntOrNull() ?: 0)
+                add(Calendar.MINUTE, offsetMins)
+            }
+            return formatter.format(calendar.time)
+        }
+
+        list.add(
+            ScheduledAlarmInfo(
+                id = com.example.util.NotificationScheduler.MEAL1_ID,
+                timeLabel = formatTime(schedule.meal1),
+                title = "Breakfast Fuel Alert",
+                type = "Preparation",
+                description = "Fuel your metabolic state with breakfast."
+            )
+        )
+
+        list.add(
+            ScheduledAlarmInfo(
+                id = com.example.util.NotificationScheduler.WORKOUT_PREP_ID,
+                timeLabel = formatTime(schedule.workout, -5),
+                title = "Workout Prep Alert",
+                type = "Preparation",
+                description = "Workout starting in 5 min."
+            )
+        )
+
+        list.add(
+            ScheduledAlarmInfo(
+                id = com.example.util.NotificationScheduler.WORKOUT_ACTION_ID,
+                timeLabel = formatTime(schedule.workout),
+                title = "Time for Workout Alert",
+                type = "Action",
+                description = "Start your scheduled exercise routine."
+            )
+        )
+
+        list.add(
+            ScheduledAlarmInfo(
+                id = com.example.util.NotificationScheduler.WORKOUT_RECOVERY_ID,
+                timeLabel = formatTime(schedule.workout, 45),
+                title = "Workout Recovery Alert",
+                type = "Recovery",
+                description = "Workout complete. Protein shake due."
+            )
+        )
+
+        list.add(
+            ScheduledAlarmInfo(
+                id = com.example.util.NotificationScheduler.MEAL2_ID,
+                timeLabel = formatTime(schedule.meal2),
+                title = "Lunch Fuel Alert",
+                type = "Preparation",
+                description = "Consume lunch meal. Stay consistent."
+            )
+        )
+
+        list.add(
+            ScheduledAlarmInfo(
+                id = com.example.util.NotificationScheduler.SNACK_ID,
+                timeLabel = formatTime(schedule.snack),
+                title = "Snack Fuel Alert",
+                type = "Risk",
+                description = "High craving risk detected."
+            )
+        )
+
+        list.add(
+            ScheduledAlarmInfo(
+                id = com.example.util.NotificationScheduler.SLEEP_WIND_DOWN_ID,
+                timeLabel = formatTime(schedule.sleep, -30),
+                title = "Sleep Wind-down Alert",
+                type = "Identity",
+                description = "Streak protection wind-down."
+            )
+        )
+
+        val transit = _todayTransitAnalysis.value
+        val riskStartHour = if (transit != null && transit.riskWindow.contains("-")) {
+            transit.riskWindow.split("-")[0].trim()
+        } else {
+            "19:00"
+        }
+        list.add(
+            ScheduledAlarmInfo(
+                id = com.example.util.NotificationScheduler.RISK_WINDOW_ID,
+                timeLabel = formatTime(riskStartHour, -15),
+                title = "Relapse Risk Window Warning",
+                type = "Risk",
+                description = "Historically this is your highest-risk period."
+            )
+        )
+
+        _scheduledAlarms.value = list
+    }
+
+    fun triggerTestNotification() {
+        val context = getApplication<Application>()
+        val timeMs = System.currentTimeMillis() + 3000
+        com.example.util.NotificationScheduler.scheduleAlarm(
+            context,
+            9999,
+            timeMs,
+            "Empathy Reboot Check-in",
+            "This is a verified local Reforge alert. Your lifestyle schedules are synced.",
+            "Action"
+        )
+    }
 }
 
 data class AdaptiveEvent(
@@ -1084,4 +1633,20 @@ data class AdaptiveEvent(
     val actionTaken: String,
     val caloriesAdjusted: Float,
     val aiExplanation: String
+)
+
+data class DailySchedule(
+    val meal1: String,
+    val meal2: String,
+    val snack: String,
+    val workout: String,
+    val sleep: String
+)
+
+data class ScheduledAlarmInfo(
+    val id: Int,
+    val timeLabel: String,
+    val title: String,
+    val type: String,
+    val description: String
 )

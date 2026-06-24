@@ -15,13 +15,13 @@ import java.io.FileOutputStream
 
 object PdfGenerator {
 
-    private val primaryColor = Color.parseColor("#1B5E20")    // Forest Green
-    private val secondaryColor = Color.parseColor("#2E7D32")  // Medium Green
-    private val accentColor = Color.parseColor("#00E676")     // Bright Neon Green
-    private val textColor = Color.parseColor("#212121")       // Dark Charcoal
-    private val textMutedColor = Color.parseColor("#666666")  // Slate Gray
-    private val errorColor = Color.parseColor("#D32F2F")      // Medical Coral Red
-    private val warningBgColor = Color.parseColor("#FFEBEE")  // Light red container
+    private val primaryColor = Color.parseColor("#0F1117")    // Deep Slate
+    private val secondaryColor = Color.parseColor("#B69CFF")  // Lavender
+    private val accentColor = Color.parseColor("#7AA2FF")     // Soft Aurora Blue
+    private val textColor = Color.parseColor("#1B2230")       // Ink Slate
+    private val textMutedColor = Color.parseColor("#667085")  // Soft Slate
+    private val errorColor = Color.parseColor("#E8B04F")      // Warm Amber
+    private val warningBgColor = Color.parseColor("#FFF7E6")  // Soft amber container
 
     fun generateProtocolPdf(context: Context, profile: UserProfile): File {
         val pdfDocument = PdfDocument()
@@ -110,7 +110,13 @@ object PdfGenerator {
         var wy = y + 10f
         drawText(canvas, "🚨 CRITICAL MEDICAL SAFETY WARNING", 40f, wy, 505, 11f, true, errorColor)
         wy += 16f
-        val warningBody = "Vikas, you are quitting alcohol and smoking cold turkey after 10 years of chronic use. This creates severe physical & neurochemical adjustments. Monitor your system hourly.\n\n" +
+        val addictionsList = profile.addictions.split(",").filter { it.isNotBlank() }
+        val dynamicWarningText = if (addictionsList.isNotEmpty()) {
+            "${profile.name}, you are quitting ${addictionsList.joinToString(" and ")} cold turkey. This creates severe physical & neurochemical adjustments. Monitor your system hourly."
+        } else {
+            "${profile.name}, you are initiating your personalized transformation reset. This creates systematic physical & neurochemical adjustments. Monitor your system hourly."
+        }
+        val warningBody = "$dynamicWarningText\n\n" +
                 "EMERGENCY RED FLAGS: If you experience severe hand tremors, visual/auditory hallucinations, high fever, or seizures, go to the Emergency Room (ER) immediately. These indicate Delirium Tremens, a high-severity emergency."
         drawText(canvas, warningBody, 40f, wy, 505, 8.5f, false, textColor)
 
@@ -231,7 +237,7 @@ object PdfGenerator {
             // Draw Workout schedule
             paint.color = Color.parseColor("#E8F5E9")
             canvas.drawRoundRect(40f, y + 115f, 555f, y + 152f, 4f, 4f, paint)
-            drawText(canvas, item.third, 45f, y + 118f, 500, 7.5f, false, Color.parseColor("#2E7D32"))
+            drawText(canvas, item.third, 45f, y + 118f, 500, 7.5f, false, accentColor)
 
             y += 175f
         }
@@ -302,7 +308,7 @@ object PdfGenerator {
             
             paint.color = Color.parseColor("#E8F5E9")
             canvas.drawRoundRect(40f, y + 105f, 555f, y + 138f, 4f, 4f, paint)
-            drawText(canvas, item.third, 45f, y + 108f, 500, 7.5f, false, Color.parseColor("#2E7D32"))
+            drawText(canvas, item.third, 45f, y + 108f, 500, 7.5f, false, accentColor)
 
             y += 157f
         }
