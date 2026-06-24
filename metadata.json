@@ -1,0 +1,6 @@
+{
+  "name": "Reforge",
+  "description": "Personal Transformation Operating System powered by Gemini AI. Overcome addictions, build daily workouts, healthy routines, dopamine timeline tracking, and active relapse recovery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
